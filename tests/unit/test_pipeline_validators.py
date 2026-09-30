@@ -264,3 +264,131 @@ def test_start_channel_number_numbers_channels_in_manifest_order() -> None:
 
 def test_channels_unnumbered_without_start_channel_number() -> None:
     assert [n for _, n in _numbered_channels(None)] == [None, None, None]
+
+
+def _pinned_config(keep_empty: bool) -> "object":
+    from src.types.config import WaybillConfig
+
+    def member(name: str, number: int) -> dict:
+        return {
+            "name": name,
+            "channelNumber": number,
+            "matchers": [{"type": "exactMatch", "values": [name]}],
+        }
+
+    return WaybillConfig(
+        kind="WaybillConfig",
+        version="v1alpha1",
+        metadata={"name": "pinned"},
+        spec={
+            "profiles": {
+                "todo": {
+                    "keepEmptyChannels": keep_empty,
+                    "groups": {
+                        "g": {
+                            "name": "G",
+                            # Channel 2 was deleted from the manifest: no renumbering.
+                            "members": [
+                                member("One", 1),
+                                member("Three", 3),
+                                member("Four", 4),
+                            ],
+                        }
+                    },
+                }
+            }
+        },
+    )
+
+
+def _plan_channels(config: object) -> "list[tuple[str, int | None, bool, int]]":
+    plan = pipeline_module.WaybillPipeline(config).compute_plan()
+    return [
+        (c.name, c.channel_number, c.placeholder, len(c.streams))
+        for g in plan.profiles[0].groups
+        for m in g.members
+        for c in m.channels
+    ]
+
+
+def test_pinned_channel_numbers_leave_gaps_and_do_not_shift() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="One"),
+        _StreamStub(pk=3, name="Three"),
+        _StreamStub(pk=4, name="Four"),
+    )
+
+    assert _plan_channels(_pinned_config(False)) == [
+        ("One", 1, False, 1),
+        ("Three", 3, False, 1),
+        ("Four", 4, False, 1),
+    ]
+
+
+def test_keep_empty_channels_keeps_numbered_placeholder() -> None:
+    _set_streams(_StreamStub(pk=1, name="One"), _StreamStub(pk=4, name="Four"))
+
+    assert _plan_channels(_pinned_config(True)) == [
+        ("One", 1, False, 1),
+        ("Three", 3, True, 0),
+        ("Four", 4, False, 1),
+    ]
+
+
+def test_empty_member_dropped_without_keep_empty_channels() -> None:
+    _set_streams(_StreamStub(pk=1, name="One"), _StreamStub(pk=4, name="Four"))
+
+    assert [name for name, *_ in _plan_channels(_pinned_config(False))] == [
+        "One",
+        "Four",
+    ]
+
+
+def test_channel_number_pin_continues_sequence() -> None:
+    from src.types.config import WaybillConfig
+
+    _set_streams(*(_StreamStub(pk=i, name=n) for i, n in enumerate("ABCD", 1)))
+    config = WaybillConfig(
+        kind="WaybillConfig",
+        version="v1alpha1",
+        metadata={"name": "mixed"},
+        spec={
+            "profiles": {
+                "p": {
+                    "startChannelNumber": 1,
+                    "groups": {
+                        "g": {
+                            "name": "G",
+                            "members": [
+                                {
+                                    "name": "A",
+                                    "matchers": [
+                                        {"type": "exactMatch", "values": ["A"]}
+                                    ],
+                                },
+                                {
+                                    "name": "B",
+                                    "channelNumber": 10,
+                                    "matchers": [
+                                        {"type": "exactMatch", "values": ["B"]}
+                                    ],
+                                },
+                                {
+                                    "name": "C",
+                                    "matchers": [
+                                        {"type": "exactMatch", "values": ["C"]}
+                                    ],
+                                },
+                            ],
+                        }
+                    },
+                }
+            }
+        },
+    )
+
+    assert [(n, num) for n, num, *_ in _plan_channels(config)] == [
+        ("A", 1),
+        ("B", 10),
+        ("C", 11),
+    ]

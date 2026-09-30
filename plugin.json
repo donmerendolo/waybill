@@ -1,6 +1,6 @@
 {
   "name": "waybill",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "A Dispatcharr plugin for managing channel configurations using Waybill manifests",
   "author": "@Matthew-Beckett",
   "help_url": "https://github.com/donmerendolo/waybill",

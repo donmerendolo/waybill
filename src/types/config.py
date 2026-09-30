@@ -308,23 +308,32 @@ def _to_validator(
     )
 
 
-def _to_start_channel_number(raw: Any, where: str) -> "int | None":
-    """Coerce startChannelNumber to a positive int, or None if absent."""
+def _to_channel_number(
+    raw: Any, where: str, key: str = "startChannelNumber"
+) -> "int | None":
+    """Coerce a channel number setting to a positive int, or None if absent."""
     if raw is None or raw == "":
         return None
     if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
-        raise ValueError(f"{where} startChannelNumber must be a positive integer")
+        raise ValueError(f"{where} {key} must be a positive integer")
     try:
         number = float(raw)
     except ValueError:
         raise ValueError(
-            f"{where} startChannelNumber must be a positive integer, got {raw!r}"
+            f"{where} {key} must be a positive integer, got {raw!r}"
         ) from None
     if number < 1 or not number.is_integer():
-        raise ValueError(
-            f"{where} startChannelNumber must be a positive integer, got {raw!r}"
-        )
+        raise ValueError(f"{where} {key} must be a positive integer, got {raw!r}")
     return int(number)
+
+
+def _to_bool(raw: Any, where: str, key: str) -> bool:
+    """Coerce a YAML boolean setting; absent means False."""
+    if raw is None:
+        return False
+    if not isinstance(raw, bool):
+        raise ValueError(f"{where} {key} must be true or false, got {raw!r}")
+    return raw
 
 
 def _to_order_streams_by(raw: Any) -> "OrderStreamsBy | None":
@@ -345,6 +354,7 @@ class ConfigMember:
     stream_profile: str | None = None
     order_streams_by: OrderStreamsBy | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
+    channel_number: int | None = None
 
     def __post_init__(self):
         where = f"member {self.name!r}"
@@ -498,6 +508,11 @@ class ConfigGroup:
             stream_profile=item.get("streamProfile") or None,
             order_streams_by=_to_order_streams_by(item.get("orderStreamsBy")),
             variables=variables,
+            channel_number=_to_channel_number(
+                item.get("channelNumber"),
+                f"member {item.get('name', '')!r}",
+                "channelNumber",
+            ),
         )
 
 
@@ -509,6 +524,7 @@ class ConfigProfile:
     order_streams_by: OrderStreamsBy | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     start_channel_number: int | None = None
+    keep_empty_channels: bool = False
 
     def __post_init__(self):
         self.groups = {
@@ -588,9 +604,14 @@ class ConfigSpec:
             stream_profile=item.get("streamProfile") or None,
             order_streams_by=_to_order_streams_by(item.get("orderStreamsBy")),
             variables=variables,
-            start_channel_number=_to_start_channel_number(
+            start_channel_number=_to_channel_number(
                 item.get("startChannelNumber"),
                 f"profile {item.get('name', '')!r}",
+            ),
+            keep_empty_channels=_to_bool(
+                item.get("keepEmptyChannels"),
+                f"profile {item.get('name', '')!r}",
+                "keepEmptyChannels",
             ),
         )
 

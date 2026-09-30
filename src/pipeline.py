@@ -25,6 +25,7 @@ from .types.config import (
 )
 from .plan import assemble_member_plan
 from .types.plan import (
+    ChannelPlan,
     GroupPlan,
     DroppedRecord,
     MemberPlan,
@@ -412,7 +413,7 @@ class ProfilePipeline:
     def __init__(self, key: str, profile: ConfigProfile) -> None:
         self._key = key
         self._name = profile.name
-        self._start_channel_number = profile.start_channel_number
+        self._profile = profile
         self._pipelines = [
             GroupPipeline(
                 key=cat_key,
@@ -430,25 +431,38 @@ class ProfilePipeline:
 
     def process(self, chunk_size: int = CHUNK_SIZE) -> ProfilePlan:
         groups = [c.process(chunk_size=chunk_size) for c in self._pipelines]
-        if self._start_channel_number is not None:
-            groups = _number_channels(groups, self._start_channel_number)
+        groups = _finalise_channels(groups, self._profile)
         return ProfilePlan(key=self._key, name=self._name, groups=groups)
 
 
-def _number_channels(groups: list[GroupPlan], start: int) -> list[GroupPlan]:
-    """Assign consecutive channel numbers in manifest order (group, member, channel)."""
-    number = start
-    numbered_groups: list[GroupPlan] = []
-    for group in groups:
+def _finalise_channels(
+    groups: list[GroupPlan], profile: ConfigProfile
+) -> list[GroupPlan]:
+    """Add keepEmptyChannels placeholders and assign channel numbers in manifest order.
+
+    Numbering runs over groups, then members, then channels. A member's
+    channelNumber pins its first channel to that number and numbering continues
+    from there; startChannelNumber seeds the counter for members before any pin.
+    Without either, channels stay unnumbered.
+    """
+    number = profile.start_channel_number
+    finalised: list[GroupPlan] = []
+    for group, group_cfg in zip(groups, profile.groups.values()):
         members = []
-        for member in group.members:
-            channels = []
-            for channel in member.channels:
-                channels.append(replace(channel, channel_number=number))
-                number += 1
-            members.append(replace(member, channels=channels))
-        numbered_groups.append(replace(group, members=members))
-    return numbered_groups
+        for member, member_cfg in zip(group.members, group_cfg.members):
+            channels = member.channels
+            if not channels and profile.keep_empty_channels:
+                channels = [ChannelPlan(name=member_cfg.name, placeholder=True)]
+            if member_cfg.channel_number is not None:
+                number = member_cfg.channel_number
+            numbered = []
+            for channel in channels:
+                numbered.append(replace(channel, channel_number=number))
+                if number is not None:
+                    number += 1
+            members.append(replace(member, channels=numbered))
+        finalised.append(replace(group, members=members))
+    return finalised
 
 
 class WaybillPipeline:

@@ -97,6 +97,22 @@ spec:
         ...
 ```
 
+With `startChannelNumber` alone, deleting a channel from the manifest shifts every channel after it down by one, and clients such as Jellyfin may then show the old logos on the wrong channels. To make numbers permanent, give members a `channelNumber`. It pins that member's channel to the number, and numbering continues from there for the members that follow. With `channelNumber` on every member, deleting one leaves a gap instead of renumbering:
+
+```yaml
+members:
+  - name: DAZN F1
+    channelNumber: 1
+    ...
+  - name: DAZN MotoGP
+    channelNumber: 2
+    ...
+```
+
+### Keeping channels without streams
+
+By default a member that matches no streams produces no channel. Set `keepEmptyChannels: true` on a profile to keep it instead: the channel (named after the member) stays in Dispatcharr, apply removes its streams and **disables** it in the profile, and its number, logo and EPG are left untouched. The next apply that finds matching streams again fills it in and re-enables it. The plan marks these channels as `no streams, kept disabled`.
+
 ---
 
 ## Matchers
@@ -517,7 +533,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.x – 1.7.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x – 1.8.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.

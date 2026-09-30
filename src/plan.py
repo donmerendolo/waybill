@@ -143,8 +143,13 @@ class WaybillPlanFormatter:
                     for channel in member.channels:
                         stream_count = len(channel.streams)
                         total_channels += 1
+                        suffix = (
+                            "  — no streams, kept disabled"
+                            if channel.placeholder
+                            else ""
+                        )
                         lines.append(
-                            f"      Channel: {channel.name}  ({stream_count} stream(s))"
+                            f"      Channel: {channel.name}  ({stream_count} stream(s)){suffix}"
                         )
                         if channel.channel_number is not None:
                             lines.append(f"        Number: {channel.channel_number}")
