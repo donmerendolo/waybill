@@ -178,7 +178,11 @@ class WaybillApplier:
             name=channel_plan.name,
             channel_group=group,
             defaults={
-                "channel_number": Channel.get_next_available_channel_number(),
+                "channel_number": (
+                    channel_plan.channel_number
+                    if channel_plan.channel_number is not None
+                    else Channel.get_next_available_channel_number()
+                ),
                 "tvg_id": channel_plan.epg_id,
                 "logo_id": new_logo_id,
                 "epg_data_id": new_epg_data_id,
@@ -191,31 +195,31 @@ class WaybillApplier:
                 f"[apply] Created channel: {channel_plan.name!r} in group {group.name!r}"
             )
         else:
-            # Update mutable fields; channel_number is intentionally left alone.
-            changed = False
+            # Update mutable fields. channel_number only changes when the profile
+            # declares startChannelNumber; otherwise the existing number is kept.
+            # Use field names (not attnames) so Dispatcharr's post_save signal
+            # recognises the EPG change and refreshes programmes / output cache.
+            update_fields: list[str] = []
             if channel.tvg_id != channel_plan.epg_id:
                 channel.tvg_id = channel_plan.epg_id
-                changed = True
+                update_fields.append("tvg_id")
             if channel.logo_id != new_logo_id:
                 channel.logo_id = new_logo_id
-                changed = True
+                update_fields.append("logo")
             if channel.epg_data_id != new_epg_data_id:
                 channel.epg_data_id = new_epg_data_id
-                changed = True
+                update_fields.append("epg_data")
             if channel.stream_profile_id != new_stream_profile_id:
                 channel.stream_profile_id = new_stream_profile_id
-                changed = True
-            if changed:
-                # Use field names (not attnames) so Dispatcharr's post_save signal
-                # recognises the EPG change and refreshes programmes / output cache.
-                channel.save(
-                    update_fields=[
-                        "tvg_id",
-                        "logo",
-                        "epg_data",
-                        "stream_profile",
-                    ]
-                )
+                update_fields.append("stream_profile")
+            if (
+                channel_plan.channel_number is not None
+                and channel.channel_number != channel_plan.channel_number
+            ):
+                channel.channel_number = channel_plan.channel_number
+                update_fields.append("channel_number")
+            if update_fields:
+                channel.save(update_fields=update_fields)
                 self._logger.info(
                     f"[apply] Updated channel: {channel_plan.name!r} in group {group.name!r}"
                 )

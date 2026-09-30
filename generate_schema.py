@@ -53,6 +53,7 @@ YAML_KEY: dict[tuple[type, str], str] = {
     (ConfigProfile, "order_streams_by"): "orderStreamsBy",
     (ConfigGroup, "order_streams_by"): "orderStreamsBy",
     (ConfigMember, "order_streams_by"): "orderStreamsBy",
+    (ConfigProfile, "start_channel_number"): "startChannelNumber",
 }
 
 # Fields entirely omitted from the schema (internal implementation details).
@@ -112,6 +113,12 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "Default stream ordering applied to every channel in this profile"
     ),
     (ConfigProfile, "groups"): "Map of group key \u2192 ConfigGroup",
+    (ConfigProfile, "start_channel_number"): (
+        "When set, channels are numbered consecutively from this value in manifest "
+        "order (group, then member, then channel); existing channels are renumbered "
+        "on apply. When omitted, new channels get the next free number and existing "
+        "numbers are kept"
+    ),
     (ConfigGroup, "name"): "Human-readable group name",
     (ConfigGroup, "stream_profile"): (
         "Stream profile override for this group (overrides profile-level setting)"

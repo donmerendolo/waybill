@@ -92,3 +92,28 @@ def test_empty_manifest_sections_raise_named_errors(body: str, expected: str) ->
 def test_empty_metadata_raises_named_error() -> None:
     with pytest.raises(ValueError, match="metadata is empty"):
         _load("kind: WaybillConfig\nversion: v1alpha1\nmetadata:\nspec: {}\n")
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, "abc", True, [1]])
+def test_start_channel_number_rejects_invalid_values(value: object) -> None:
+    payload = _valid_config_payload()
+    payload["spec"] = {"profiles": {"todo": {"startChannelNumber": value}}}
+
+    with pytest.raises(
+        ValueError, match="startChannelNumber must be a positive integer"
+    ):
+        WaybillConfig(**payload)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(1, 1), (100, 100), ("7", 7), (2.0, 2)]
+)
+def test_start_channel_number_accepts_positive_integers(
+    value: object, expected: int
+) -> None:
+    payload = _valid_config_payload()
+    payload["spec"] = {"profiles": {"todo": {"startChannelNumber": value}}}
+
+    cfg = WaybillConfig(**payload)
+
+    assert cfg.spec.profiles["todo"].start_channel_number == expected

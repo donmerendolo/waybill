@@ -81,6 +81,22 @@ member → group → profile → (none)
 
 Setting `streamProfile: null` at any level explicitly clears the inherited value.
 
+### Profile key and channel numbering
+
+The profile key (`<profile_key>` above) is the name of the Dispatcharr channel profile that Waybill writes to. Apply creates the profile if it is missing and **enables** every manifest channel in it. To use a profile you already have, such as one called `todo`, use its exact name as the key.
+
+By default a new channel gets the next free channel number and existing numbers are never changed. Set `startChannelNumber` on a profile to number its channels consecutively in manifest order: groups in the order they are written, then members, then channels. Every apply renumbers existing channels to match, so reordering the manifest reorders the channels.
+
+```yaml
+spec:
+  profiles:
+    todo:
+      name: Todo
+      startChannelNumber: 1   # first channel is 1, the next 2, ...
+      groups:
+        ...
+```
+
 ---
 
 ## Matchers
@@ -501,7 +517,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x – 1.7.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.

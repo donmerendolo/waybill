@@ -188,3 +188,79 @@ def test_stream_metadata_used_when_not_overridden() -> None:
 
     assert result.channels[0].epg_id == "DAZN 1 HD"
     assert result.channels[0].logo_url == "a.png"
+
+
+def _numbering_config(start: object) -> "object":
+    from src.types.config import WaybillConfig
+
+    return WaybillConfig(
+        kind="WaybillConfig",
+        version="v1alpha1",
+        metadata={"name": "numbering"},
+        spec={
+            "profiles": {
+                "todo": {
+                    "name": "Todo",
+                    "startChannelNumber": start,
+                    "groups": {
+                        "dazn": {
+                            "name": "DAZN",
+                            "members": [
+                                {
+                                    "name": "DAZN F1",
+                                    "matchers": [
+                                        {"type": "exactMatch", "values": ["DAZN F1"]}
+                                    ],
+                                },
+                                {
+                                    "name": "DAZN 1",
+                                    "matchers": [
+                                        {"type": "exactMatch", "values": ["DAZN 1"]}
+                                    ],
+                                },
+                            ],
+                        },
+                        "movistar": {
+                            "name": "Movistar",
+                            "members": [
+                                {
+                                    "name": "M+ LaLiga",
+                                    "matchers": [
+                                        {"type": "exactMatch", "values": ["M+ LaLiga"]}
+                                    ],
+                                },
+                            ],
+                        },
+                    },
+                }
+            }
+        },
+    )
+
+
+def _numbered_channels(start: object) -> "list[tuple[str, int | None]]":
+    # Deliberately not in manifest order, to prove numbering follows the manifest.
+    _set_streams(
+        _StreamStub(pk=1, name="M+ LaLiga"),
+        _StreamStub(pk=2, name="DAZN 1"),
+        _StreamStub(pk=3, name="DAZN F1"),
+    )
+    plan = pipeline_module.WaybillPipeline(_numbering_config(start)).compute_plan()
+    return [
+        (channel.name, channel.channel_number)
+        for group in plan.profiles[0].groups
+        for member in group.members
+        for channel in member.channels
+    ]
+
+
+def test_start_channel_number_numbers_channels_in_manifest_order() -> None:
+    assert _numbered_channels(100) == [
+        ("DAZN F1", 100),
+        ("DAZN 1", 101),
+        ("M+ LaLiga", 102),
+    ]
+
+
+def test_channels_unnumbered_without_start_channel_number() -> None:
+    assert [n for _, n in _numbered_channels(None)] == [None, None, None]

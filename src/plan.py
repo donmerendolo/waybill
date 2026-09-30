@@ -146,6 +146,8 @@ class WaybillPlanFormatter:
                         lines.append(
                             f"      Channel: {channel.name}  ({stream_count} stream(s))"
                         )
+                        if channel.channel_number is not None:
+                            lines.append(f"        Number: {channel.channel_number}")
                         if channel.epg_id:
                             lines.append(f"        EPG-ID: {channel.epg_id}")
                         if channel.logo_url:

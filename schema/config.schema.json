@@ -102,6 +102,13 @@
           "additionalProperties": {
             "$ref": "#/$defs/ConfigVariable"
           }
+        },
+        "startChannelNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "When set, channels are numbered consecutively from this value in manifest order (group, then member, then channel); existing channels are renumbered on apply. When omitted, new channels get the next free number and existing numbers are kept"
         }
       },
       "additionalProperties": false

@@ -412,6 +412,7 @@ class ProfilePipeline:
     def __init__(self, key: str, profile: ConfigProfile) -> None:
         self._key = key
         self._name = profile.name
+        self._start_channel_number = profile.start_channel_number
         self._pipelines = [
             GroupPipeline(
                 key=cat_key,
@@ -428,11 +429,26 @@ class ProfilePipeline:
         ]
 
     def process(self, chunk_size: int = CHUNK_SIZE) -> ProfilePlan:
-        return ProfilePlan(
-            key=self._key,
-            name=self._name,
-            groups=[c.process(chunk_size=chunk_size) for c in self._pipelines],
-        )
+        groups = [c.process(chunk_size=chunk_size) for c in self._pipelines]
+        if self._start_channel_number is not None:
+            groups = _number_channels(groups, self._start_channel_number)
+        return ProfilePlan(key=self._key, name=self._name, groups=groups)
+
+
+def _number_channels(groups: list[GroupPlan], start: int) -> list[GroupPlan]:
+    """Assign consecutive channel numbers in manifest order (group, member, channel)."""
+    number = start
+    numbered_groups: list[GroupPlan] = []
+    for group in groups:
+        members = []
+        for member in group.members:
+            channels = []
+            for channel in member.channels:
+                channels.append(replace(channel, channel_number=number))
+                number += 1
+            members.append(replace(member, channels=channels))
+        numbered_groups.append(replace(group, members=members))
+    return numbered_groups
 
 
 class WaybillPipeline:
