@@ -109,6 +109,10 @@
             "null"
           ],
           "description": "When set, channels are numbered consecutively from this value in manifest order (group, then member, then channel); existing channels are renumbered on apply. When omitted, new channels get the next free number and existing numbers are kept"
+        },
+        "keepEmptyChannels": {
+          "type": "boolean",
+          "description": "When true, a member that matches no streams still produces a channel (named after the member). Apply keeps it disabled in the profile with no streams and leaves its number, logo and EPG untouched, re-enabling it once streams match"
         }
       },
       "additionalProperties": false
@@ -216,6 +220,13 @@
           "additionalProperties": {
             "$ref": "#/$defs/ConfigVariable"
           }
+        },
+        "channelNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Pins this member's first channel to this number; numbering of following channels continues from it. Use on every member for numbers that never shift"
         }
       },
       "required": [

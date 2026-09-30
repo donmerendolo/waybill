@@ -164,6 +164,9 @@ class WaybillApplier:
 
         Returns (created, updated, streams_assigned).
         """
+        if channel_plan.placeholder:
+            return self._apply_placeholder(channel_plan, group, channel_profile)
+
         stream_profile = self._resolve_stream_profile(channel_plan.stream_profile)
         logo = self._resolve_logo(channel_plan.logo_url, channel_plan.name)
         epg_data = self._resolve_epg_data(channel_plan.epg_id)
@@ -242,6 +245,56 @@ class WaybillApplier:
         self._rollup_catchup(channel)
 
         return (1 if created else 0, 0 if created else 1, len(stream_rows))
+
+    def _apply_placeholder(
+        self,
+        channel_plan: "ChannelPlan",
+        group: ChannelGroup,
+        channel_profile: ChannelProfile,
+    ) -> tuple[int, int, int]:
+        """
+        Keep a channel that currently has no matching streams (keepEmptyChannels).
+
+        The channel is created if missing, its streams are cleared and it is
+        disabled in the profile. Its name, number, logo and EPG are left as they
+        are, so clients keep the same channel; it is re-enabled with streams on
+        the first apply that finds a match again.
+        """
+        channel, created = Channel.objects.get_or_create(
+            name=channel_plan.name,
+            channel_group=group,
+            defaults={
+                "channel_number": (
+                    channel_plan.channel_number
+                    if channel_plan.channel_number is not None
+                    else Channel.get_next_available_channel_number()
+                ),
+            },
+        )
+        if created:
+            self._logger.info(
+                f"[apply] Created empty channel: {channel_plan.name!r} in group {group.name!r}"
+            )
+        elif (
+            channel_plan.channel_number is not None
+            and channel.channel_number != channel_plan.channel_number
+        ):
+            channel.channel_number = channel_plan.channel_number
+            channel.save(update_fields=["channel_number"])
+
+        ChannelProfileMembership.objects.update_or_create(
+            channel_profile=channel_profile,
+            channel=channel,
+            defaults={"enabled": False},
+        )
+        removed, _ = ChannelStream.objects.filter(channel=channel).delete()
+        self._rollup_catchup(channel)
+        if not created:
+            self._logger.info(
+                f"[apply] No streams for {channel_plan.name!r}; kept it disabled"
+                + (f" and removed {removed} stream(s)" if removed else "")
+            )
+        return (1 if created else 0, 0 if created else 1, 0)
 
     def _log_summary(self, summary: dict[str, int]) -> None:
         self._logger.info(

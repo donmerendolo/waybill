@@ -54,6 +54,8 @@ YAML_KEY: dict[tuple[type, str], str] = {
     (ConfigGroup, "order_streams_by"): "orderStreamsBy",
     (ConfigMember, "order_streams_by"): "orderStreamsBy",
     (ConfigProfile, "start_channel_number"): "startChannelNumber",
+    (ConfigProfile, "keep_empty_channels"): "keepEmptyChannels",
+    (ConfigMember, "channel_number"): "channelNumber",
 }
 
 # Fields entirely omitted from the schema (internal implementation details).
@@ -113,6 +115,15 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "Default stream ordering applied to every channel in this profile"
     ),
     (ConfigProfile, "groups"): "Map of group key \u2192 ConfigGroup",
+    (ConfigProfile, "keep_empty_channels"): (
+        "When true, a member that matches no streams still produces a channel (named "
+        "after the member). Apply keeps it disabled in the profile with no streams and "
+        "leaves its number, logo and EPG untouched, re-enabling it once streams match"
+    ),
+    (ConfigMember, "channel_number"): (
+        "Pins this member's first channel to this number; numbering of following "
+        "channels continues from it. Use on every member for numbers that never shift"
+    ),
     (ConfigProfile, "start_channel_number"): (
         "When set, channels are numbered consecutively from this value in manifest "
         "order (group, then member, then channel); existing channels are renumbered "

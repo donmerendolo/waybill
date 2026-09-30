@@ -117,3 +117,32 @@ def test_start_channel_number_accepts_positive_integers(
     cfg = WaybillConfig(**payload)
 
     assert cfg.spec.profiles["todo"].start_channel_number == expected
+
+
+@pytest.mark.parametrize("value", [0, -3, 2.5, "x", False])
+def test_member_channel_number_rejects_invalid_values(value: object) -> None:
+    payload = _valid_config_payload()
+    payload["spec"] = {
+        "profiles": {
+            "p": {
+                "groups": {
+                    "g": {
+                        "name": "G",
+                        "members": [{"name": "A", "channelNumber": value}],
+                    }
+                }
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="channelNumber must be a positive integer"):
+        WaybillConfig(**payload)
+
+
+@pytest.mark.parametrize("value", ["yes", 1, "true"])
+def test_keep_empty_channels_must_be_boolean(value: object) -> None:
+    payload = _valid_config_payload()
+    payload["spec"] = {"profiles": {"p": {"keepEmptyChannels": value}}}
+
+    with pytest.raises(ValueError, match="keepEmptyChannels must be true or false"):
+        WaybillConfig(**payload)
