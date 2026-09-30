@@ -120,6 +120,8 @@ class ChannelPlan:
     stream_profile: str | None = None
     order_streams_by: OrderStreamsBy | None = None
     streams: list[StreamRecord] = field(default_factory=_empty_stream_records)
+    # Set when the profile declares startChannelNumber; None leaves numbering to Dispatcharr.
+    channel_number: int | None = None
 
 
 @dataclass(frozen=True)

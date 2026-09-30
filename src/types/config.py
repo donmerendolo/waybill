@@ -308,6 +308,25 @@ def _to_validator(
     )
 
 
+def _to_start_channel_number(raw: Any, where: str) -> "int | None":
+    """Coerce startChannelNumber to a positive int, or None if absent."""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise ValueError(f"{where} startChannelNumber must be a positive integer")
+    try:
+        number = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"{where} startChannelNumber must be a positive integer, got {raw!r}"
+        ) from None
+    if number < 1 or not number.is_integer():
+        raise ValueError(
+            f"{where} startChannelNumber must be a positive integer, got {raw!r}"
+        )
+    return int(number)
+
+
 def _to_order_streams_by(raw: Any) -> "OrderStreamsBy | None":
     """Coerce a raw YAML value to OrderStreamsBy, or None if absent."""
     if raw is None or raw == "":
@@ -489,6 +508,7 @@ class ConfigProfile:
     stream_profile: str | None = None
     order_streams_by: OrderStreamsBy | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
+    start_channel_number: int | None = None
 
     def __post_init__(self):
         self.groups = {
@@ -568,6 +588,10 @@ class ConfigSpec:
             stream_profile=item.get("streamProfile") or None,
             order_streams_by=_to_order_streams_by(item.get("orderStreamsBy")),
             variables=variables,
+            start_channel_number=_to_start_channel_number(
+                item.get("startChannelNumber"),
+                f"profile {item.get('name', '')!r}",
+            ),
         )
 
 
