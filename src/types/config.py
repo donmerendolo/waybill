@@ -43,6 +43,19 @@ def _empty_variable_dict() -> dict[str, "ConfigVariable"]:
     return {}
 
 
+def _require_mapping(item: Any, where: str) -> Mapping[str, Any]:
+    """Reject empty or non-mapping manifest sections with a message naming them."""
+    if item is None:
+        raise ValueError(
+            f"{where} is empty; check its indentation and that it has fields under it"
+        )
+    if not isinstance(item, Mapping):
+        raise ValueError(
+            f"{where} must be a mapping of fields, got {type(item).__name__}"
+        )
+    return cast(Mapping[str, Any], item)
+
+
 class MatcherType(Enum):
     REGEX = "regex"
     HAS_PREFIX = "hasPrefix"
@@ -315,9 +328,31 @@ class ConfigMember:
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
 
     def __post_init__(self):
-        self.matchers = [self._to_matcher(item) for item in self.matchers]
-        self.transformers = [_to_transformer(item) for item in self.transformers]
-        self.validators = [_to_validator(item) for item in self.validators]
+        where = f"member {self.name!r}"
+        self.matchers = [
+            self._to_matcher(
+                item
+                if isinstance(item, ConfigMatcher)
+                else _require_mapping(item, f"matcher #{i} of {where}")
+            )
+            for i, item in enumerate(self.matchers, 1)
+        ]
+        self.transformers = [
+            _to_transformer(
+                item
+                if isinstance(item, ConfigTransformer)
+                else _require_mapping(item, f"transformer #{i} of {where}")
+            )
+            for i, item in enumerate(self.transformers, 1)
+        ]
+        self.validators = [
+            _to_validator(
+                item
+                if isinstance(item, ConfigValidator)
+                else _require_mapping(item, f"validator #{i} of {where}")
+            )
+            for i, item in enumerate(self.validators, 1)
+        ]
         self.variables = _to_variable_dict(self.variables)
 
     @staticmethod
@@ -393,7 +428,14 @@ class ConfigGroup:
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
 
     def __post_init__(self):
-        self.members = [self._to_member(item) for item in self.members]
+        self.members = [
+            self._to_member(
+                _require_mapping(item, f"member #{i} of group {self.name!r}")
+                if not isinstance(item, ConfigMember)
+                else item
+            )
+            for i, item in enumerate(self.members, 1)
+        ]
         self.variables = _to_variable_dict(self.variables)
 
     @staticmethod
@@ -450,7 +492,12 @@ class ConfigProfile:
 
     def __post_init__(self):
         self.groups = {
-            name: self._to_group(value) for name, value in self.groups.items()
+            name: self._to_group(
+                _require_mapping(value, f"group {name!r}")
+                if not isinstance(value, ConfigGroup)
+                else value
+            )
+            for name, value in self.groups.items()
         }
         self.variables = _to_variable_dict(self.variables)
 
@@ -488,7 +535,12 @@ class ConfigSpec:
 
     def __post_init__(self):
         self.profiles = {
-            name: self._to_profile(value) for name, value in self.profiles.items()
+            name: self._to_profile(
+                _require_mapping(value, f"profile {name!r}")
+                if not isinstance(value, ConfigProfile)
+                else value
+            )
+            for name, value in self.profiles.items()
         }
 
     @staticmethod
@@ -527,8 +579,12 @@ class WaybillConfig:
     spec: ConfigSpec = field(default_factory=ConfigSpec)
 
     def __post_init__(self):
-        self.metadata = self._to_metadata(self.metadata)
-        self.spec = self._to_spec(self.spec)
+        if not isinstance(self.metadata, ConfigMetadata):
+            self.metadata = self._to_metadata(
+                _require_mapping(self.metadata, "metadata")
+            )
+        if not isinstance(self.spec, ConfigSpec):
+            self.spec = self._to_spec(_require_mapping(self.spec, "spec"))
         if self.kind != SUPPORTED_CONFIG_KIND:
             raise ValueError(
                 f"Unsupported config kind {self.kind!r}; expected {SUPPORTED_CONFIG_KIND!r}"

@@ -501,7 +501,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.0 | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.
