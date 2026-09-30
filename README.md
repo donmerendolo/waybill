@@ -510,7 +510,11 @@ The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in
 
 ## Installation
 
-Build the plugin ZIP and install it into Dispatcharr via the plugin manager:
+Download `waybill.zip` from the [latest release](https://github.com/donmerendolo/waybill/releases/latest) and upload it in Dispatcharr under **Plugins → Import Plugin**. Keep the file name `waybill.zip`: Dispatcharr names the plugin after it, so re-importing with **Overwrite** updates the existing install.
+
+Releases are built by the `Build and Release` workflow on every push to `main`. It publishes a release tagged `v<version>` from `pyproject.toml` (which must match `plugin.json`) and skips the run if that release already exists, so bump the version in both files to publish a new one.
+
+To build the plugin ZIP yourself:
 
 ```sh
 uv build --wheel
