@@ -145,3 +145,46 @@ def test_channel_scope_non_empty_uses_assembled_epg_id() -> None:
     assert [channel.name for channel in result.channels] == ["NBS One"]
     assert result.channels[0].epg_id == "bbc.one"
     assert result.violations == []
+
+
+def test_set_metadata_tvg_id_and_logo_reach_channel_plan() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="CANAL+ SPORT", tvg_id="", logo_url=""),
+        _StreamStub(pk=2, name="CANAL+ SPORT 3", tvg_id=None, logo_url=None),
+    )
+    member = ConfigMember(
+        name="Canal+ Sport",
+        transformers=[
+            {
+                "type": "setMetadata",
+                "name": "Canal+ Sport",
+                "tvgId": "canal.sport",
+                "logoUrl": "https://example.com/canal-sport.png",
+            }
+        ],
+    )
+
+    result = MemberPipeline(member).process()
+
+    assert [channel.name for channel in result.channels] == ["Canal+ Sport"]
+    assert result.channels[0].epg_id == "canal.sport"
+    assert result.channels[0].logo_url == "https://example.com/canal-sport.png"
+    assert [s.tvg_id for s in result.channels[0].streams] == [
+        "canal.sport",
+        "canal.sport",
+    ]
+
+
+def test_stream_metadata_used_when_not_overridden() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="DAZN 1 FHD", tvg_id="DAZN 1 HD", logo_url="a.png"),
+    )
+    member = ConfigMember(
+        name="DAZN 1",
+        transformers=[{"type": "setMetadata", "name": "DAZN 1"}],
+    )
+
+    result = MemberPipeline(member).process()
+
+    assert result.channels[0].epg_id == "DAZN 1 HD"
+    assert result.channels[0].logo_url == "a.png"
