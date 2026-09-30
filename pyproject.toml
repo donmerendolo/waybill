@@ -1,6 +1,6 @@
 [project]
 name = "waybill"
-version = "1.5.0"
+version = "1.6.0"
 description = "A Dispatcharr plugin for managing channel configurations using Waybill manifests"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -36,4 +36,4 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.uv.sources]
-dispatcharr = { git = "https://github.com/Dispatcharr/Dispatcharr", tag = "v0.27.2" }
+dispatcharr = { git = "https://github.com/Dispatcharr/Dispatcharr", tag = "v0.31.0" }

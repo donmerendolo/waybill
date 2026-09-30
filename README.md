@@ -1,8 +1,7 @@
 # Waybill
 
-> [!CAUTION]
-> NOT TESTED THOROUGHLY WITH NEWER DISPATCHARR VERSIONS
-> I just changed the tag in `pyproject.toml`.
+> [!NOTE]
+> Built against Dispatcharr v0.31.0. The apply path degrades gracefully on older releases that lack the newer hooks.
 
 A [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) plugin for managing channel configurations declaratively. You define a YAML manifest describing which streams to keep and how to name them. Waybill plans and applies those changes to Dispatcharr for you.
 

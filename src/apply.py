@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 from django.db import transaction
+from django.db.models import Max
 
 from apps.channels.models import (
     Channel,
@@ -48,18 +49,13 @@ class WaybillApplier:
 
         with transaction.atomic():
             for profile in self._plan.profiles:
-                channel_profile, profile_created = ChannelProfile.objects.get_or_create(
-                    name=profile.key
+                channel_profile, profile_created = self._get_or_create_profile(
+                    profile.key
                 )
                 if profile_created:
                     self._logger.info(
                         f"[apply] Created channel profile: {profile.key!r}"
                     )
-                    # Dispatcharr's post_save signal auto-adds every existing channel to a new
-                    # profile with enabled=True. Disable them so only manifest channels are enabled.
-                    ChannelProfileMembership.objects.filter(
-                        channel_profile=channel_profile
-                    ).update(enabled=False)
 
                 for plan_group in profile.groups:
                     group, group_created = ChannelGroup.objects.get_or_create(
@@ -98,6 +94,40 @@ class WaybillApplier:
 
         self._log_summary(summary)
         return summary
+
+    def _get_or_create_profile(self, name: str) -> tuple[ChannelProfile, bool]:
+        existing = ChannelProfile.objects.filter(name=name).first()
+        if existing is not None:
+            return existing, False
+
+        channel_profile = ChannelProfile(name=name)
+        # Dispatcharr >= 0.31 skips auto-adding every existing channel to a new
+        # profile when this flag is set; older versions ignore it.
+        channel_profile._start_empty = True  # type: ignore[attr-defined]
+        channel_profile.save()
+        # Older Dispatcharr versions still auto-add every channel with enabled=True.
+        # Disable them so only manifest channels are enabled.
+        ChannelProfileMembership.objects.filter(channel_profile=channel_profile).update(
+            enabled=False
+        )
+        return channel_profile, True
+
+    def _rollup_catchup(self, channel: Channel) -> None:
+        """
+        Mirror Dispatcharr's ChannelStream signal (0.31+), which bulk_create bypasses:
+        roll catch-up flags up from the channel's active streams.
+        """
+        if not hasattr(channel, "is_catchup"):
+            return
+        catchup_qs = channel.streams.filter(
+            is_catchup=True,
+            m3u_account__is_active=True,
+        )
+        max_days = catchup_qs.aggregate(max_days=Max("catchup_days"))["max_days"]
+        Channel.objects.filter(pk=channel.pk).update(
+            is_catchup=catchup_qs.exists(),
+            catchup_days=max_days or 0,
+        )
 
     def _resolve_stream_profile(self, name: str | None) -> StreamProfile | None:
         if not name:
@@ -176,12 +206,14 @@ class WaybillApplier:
                 channel.stream_profile_id = new_stream_profile_id
                 changed = True
             if changed:
+                # Use field names (not attnames) so Dispatcharr's post_save signal
+                # recognises the EPG change and refreshes programmes / output cache.
                 channel.save(
                     update_fields=[
                         "tvg_id",
-                        "logo_id",
-                        "epg_data_id",
-                        "stream_profile_id",
+                        "logo",
+                        "epg_data",
+                        "stream_profile",
                     ]
                 )
                 self._logger.info(
@@ -203,6 +235,7 @@ class WaybillApplier:
         ]
         if stream_rows:
             ChannelStream.objects.bulk_create(stream_rows, ignore_conflicts=True)
+        self._rollup_catchup(channel)
 
         return (1 if created else 0, 0 if created else 1, len(stream_rows))
 
