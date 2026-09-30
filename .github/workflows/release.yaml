@@ -1,0 +1,77 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          plugin_version=$(python -c 'import json; print(json.load(open("plugin.json"))["version"])')
+          if [ "$version" != "$plugin_version" ]; then
+            echo "::error::pyproject.toml version ($version) does not match plugin.json version ($plugin_version)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release ${{ steps.version.outputs.tag }} already exists; bump the version in pyproject.toml and plugin.json to publish a new one."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.existing.outputs.exists == 'false'
+        run: uv sync --group dev --group bundle
+
+      - name: Run tests
+        if: steps.existing.outputs.exists == 'false'
+        run: uv run pytest -n auto
+
+      - name: Build plugin ZIP
+        if: steps.existing.outputs.exists == 'false'
+        run: |
+          uv build --wheel
+          # Dispatcharr names a flat plugin after its ZIP file, so keep the name stable.
+          cp "dist/waybill-${{ steps.version.outputs.version }}-py3-none-any.zip" dist/waybill.zip
+
+      - name: Create release
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" dist/waybill.zip \
+            --target "${{ github.sha }}" \
+            --title "Waybill ${{ steps.version.outputs.tag }}" \
+            --generate-notes

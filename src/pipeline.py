@@ -297,8 +297,10 @@ class MemberPipeline:
                             id=stream.pk,
                             original_name=original_name,
                             transformed_name=working.name,
-                            tvg_id=stream.tvg_id,
-                            logo_url=stream.logo_url,
+                            # Use the transformed copy so setMetadata / set
+                            # overrides of tvg_id and logo_url reach the channel.
+                            tvg_id=working.tvg_id,
+                            logo_url=working.logo_url,
                             captures=declared_vars,
                             steps=steps,
                             variable_events=var_events,
