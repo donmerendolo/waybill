@@ -1,5 +1,8 @@
 # Waybill
 
+> [!CAUTION]
+> **This fork is entirely vibe coded.**
+
 > [!NOTE]
 > Built against Dispatcharr v0.31.0. The apply path degrades gracefully on older releases that lack the newer hooks.
 
