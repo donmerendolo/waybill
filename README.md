@@ -463,6 +463,16 @@ Asserts that a field is non-empty. The default `scope: stream` checks each trans
 | `upsert` | Creates or updates channels declared in the manifest; leaves any other channels untouched |
 | `overwrite` | Creates or updates declared channels **and deletes** any channels that exist in a group but are not in the manifest |
 
+On every apply, Waybill also:
+
+- Creates missing channel profiles **empty**. Only channels declared in the manifest are enabled in them; other existing channels are not auto-added as enabled.
+- Replaces each channel's stream list with the planned streams, in plan order.
+- Recomputes the channel's catch-up flags (`is_catchup` / `catchup_days`) from its assigned streams (Dispatcharr v0.31+).
+- Triggers Dispatcharr's EPG programme refresh when a channel's EPG assignment changes.
+
+> [!NOTE]
+> Since Dispatcharr v0.31, deleting a channel no longer stops a stream that is currently playing on it. Channels removed by `overwrite` keep streaming to connected clients until they disconnect.
+
 ---
 
 ## Examples
@@ -480,6 +490,18 @@ The `examples/` directory contains annotated manifests covering every feature:
 | [07-exhaustive.yaml](examples/07-exhaustive.yaml) | Every schema feature in one manifest |
 | [08-validators.yaml](examples/08-validators.yaml) | All three validator types with both action levels and combined validator suites |
 | [09-template-transformer.yaml](examples/09-template-transformer.yaml) | Named capture groups, template transformer, and scoped variables at profile/group/member level |
+| [10-uk-freeview.yaml](examples/10-uk-freeview.yaml) | Real-world manifest for UK free-to-air channels from the iptv-org playlist |
+
+---
+
+## Compatibility
+
+| Waybill | Dispatcharr |
+|---|---|
+| 1.6.0 | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.5.0 | v0.27.2 |
+
+The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.
 
 ---
 
@@ -497,9 +519,14 @@ The resulting `.zip` file in `dist/` can be uploaded directly through the Dispat
 
 ## Development
 
+Requires Python 3.13 and a recent [uv](https://docs.astral.sh/uv/) (older releases such as 0.8.x cannot read the current `uv.lock`; run `uv self update`).
+
 ```sh
 # Install dependencies
 make deps
+
+# Run the unit tests
+make test
 
 # Regenerate the JSON Schema from the Python type definitions
 uv run generate_schema.py
