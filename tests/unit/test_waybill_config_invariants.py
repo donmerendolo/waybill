@@ -42,3 +42,53 @@ def test_waybill_config_requires_non_empty_metadata_name() -> None:
 
     with pytest.raises(ValueError, match="metadata.name must be a non-empty string"):
         WaybillConfig(**payload)
+
+
+def _load(manifest: str) -> WaybillConfig:
+    import yaml
+
+    return WaybillConfig(**yaml.safe_load(manifest))
+
+
+_HEAD = """
+kind: WaybillConfig
+version: v1alpha1
+metadata:
+  name: demo
+"""
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("spec:\n", "spec is empty"),
+        ("spec:\n  profiles:\n    main:\n", "profile 'main' is empty"),
+        (
+            "spec:\n  profiles:\n    main:\n      groups:\n        futbol:\n",
+            "group 'futbol' is empty",
+        ),
+        (
+            "spec:\n  profiles:\n    main:\n      groups:\n        g:\n"
+            "          name: G\n          members:\n            -\n",
+            "member #1 of group 'G' is empty",
+        ),
+        (
+            "spec:\n  profiles:\n    main:\n      groups:\n        g:\n"
+            "          name: G\n          members:\n            - name: A\n"
+            "              matchers:\n                -\n",
+            "matcher #1 of member 'A' is empty",
+        ),
+        (
+            "spec:\n  profiles:\n    main:\n      groups:\n        g: just-a-string\n",
+            "group 'g' must be a mapping of fields, got str",
+        ),
+    ],
+)
+def test_empty_manifest_sections_raise_named_errors(body: str, expected: str) -> None:
+    with pytest.raises(ValueError, match=expected):
+        _load(_HEAD + body)
+
+
+def test_empty_metadata_raises_named_error() -> None:
+    with pytest.raises(ValueError, match="metadata is empty"):
+        _load("kind: WaybillConfig\nversion: v1alpha1\nmetadata:\nspec: {}\n")
