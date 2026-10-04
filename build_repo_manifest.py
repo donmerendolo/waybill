@@ -2,12 +2,13 @@
 
 Dispatcharr can track third-party plugin repositories: add this repo's manifest
 URL under Plugins and the dashboard shows when a new version is out and installs
-it in place. The release workflow attaches the generated ``manifest.json`` to
-every GitHub release next to ``waybill.zip``, so the stable URL
+it in place. The release workflow commits the generated ``manifest.json`` to the
+``releases`` branch after each release, so
 
-    https://github.com/<owner>/<repo>/releases/latest/download/manifest.json
+    https://raw.githubusercontent.com/<owner>/<repo>/releases/manifest.json
 
-always describes the newest release.
+always describes the newest release. It is also attached to each GitHub
+release next to ``waybill.zip``.
 
 Usage:
     python build_repo_manifest.py --zip dist/waybill.zip --repo owner/name \\

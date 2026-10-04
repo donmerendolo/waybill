@@ -566,12 +566,12 @@ Download `waybill.zip` from the [latest release](https://github.com/donmerendolo
 
 ### Updating from the Dispatcharr dashboard
 
-Each release also publishes a plugin-repo manifest, so Dispatcharr can show new versions and install them for you:
+Each release also publishes a plugin-repo manifest (`manifest.json` on this repo's [`releases` branch](https://github.com/donmerendolo/waybill/tree/releases)), so Dispatcharr can show new versions and install them for you:
 
 1. In Dispatcharr's **Plugins** page, click **Manage Repos** and add this as the **Repository Manifest URL**:
 
    ```text
-   https://github.com/donmerendolo/waybill/releases/latest/download/manifest.json
+   https://raw.githubusercontent.com/donmerendolo/waybill/releases/manifest.json
    ```
 
    The repo shows up as `donmerendolo/waybill`. It is unsigned, so Dispatcharr marks it as unverified.
@@ -582,7 +582,7 @@ Each release also publishes a plugin-repo manifest, so Dispatcharr can show new 
 
 The official Dispatcharr plugin repo also lists a `waybill` (the original, older project). Install this one from `donmerendolo/waybill`; Dispatcharr shows the other listing as installed from a different repo.
 
-Releases are built by the `Build and Release` workflow on every push to `main`. It publishes a release tagged `v<version>` from `pyproject.toml` (which must match `plugin.json`), with `waybill.zip` and the repo `manifest.json` (built by `build_repo_manifest.py`) attached, and skips the run if that release already exists, so bump the version in both files to publish a new one.
+Releases are built by the `Build and Release` workflow on every push to `main`. It publishes a release tagged `v<version>` from `pyproject.toml` (which must match `plugin.json`), with `waybill.zip` and the repo `manifest.json` (built by `build_repo_manifest.py`) attached, commits that manifest to the `releases` branch, and skips the run if that release already exists, so bump the version in both files to publish a new one.
 
 To build the plugin ZIP yourself:
 

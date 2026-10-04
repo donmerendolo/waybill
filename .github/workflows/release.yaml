@@ -85,3 +85,26 @@ jobs:
             --target "${{ github.sha }}" \
             --title "Waybill ${{ steps.version.outputs.tag }}" \
             --generate-notes
+
+      - name: Publish repo manifest to the releases branch
+        if: steps.existing.outputs.exists == 'false'
+        # Dispatcharr's plugin repo URL:
+        # https://raw.githubusercontent.com/<owner>/<repo>/releases/manifest.json
+        # Kept off main so releases don't add bot commits to it.
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          dir="$RUNNER_TEMP/releases-branch"
+          if git ls-remote --exit-code --heads origin releases >/dev/null 2>&1; then
+            git fetch --depth 1 origin releases:releases
+            git worktree add "$dir" releases
+          else
+            git worktree add --orphan -b releases "$dir"
+          fi
+          cp dist/manifest.json "$dir/manifest.json"
+          cd "$dir"
+          git add manifest.json
+          git commit -m "Publish plugin repo manifest for $TAG"
+          git push origin releases

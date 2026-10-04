@@ -53,7 +53,10 @@ def test_download_url_resolves_to_release_asset() -> None:
 
     # Dispatcharr joins root_url and a relative latest_url with "/".
     url = f"{inner['root_url'].rstrip('/')}/{entry['latest_url']}"
-    assert url == "https://github.com/donmerendolo/waybill/releases/download/v1.9.1/waybill.zip"
+    assert (
+        url
+        == "https://github.com/donmerendolo/waybill/releases/download/v1.9.1/waybill.zip"
+    )
 
 
 def test_entry_describes_this_release() -> None:
@@ -75,5 +78,7 @@ def test_entry_describes_this_release() -> None:
 def test_plugin_json_version_matches_pyproject() -> None:
     import tomllib
 
-    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
     assert _plugin_json()["version"] == pyproject["project"]["version"]
