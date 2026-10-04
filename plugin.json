@@ -1,7 +1,7 @@
 {
   "name": "waybill",
   "display_name": "Waybill",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "license": "GPL-3.0-only",
   "min_dispatcharr_version": "0.31.0",
   "description": "A Dispatcharr plugin for managing channel configurations using Waybill manifests",
