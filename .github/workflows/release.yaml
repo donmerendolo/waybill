@@ -66,12 +66,22 @@ jobs:
           # Dispatcharr names a flat plugin after its ZIP file, so keep the name stable.
           cp "dist/waybill-${{ steps.version.outputs.version }}-py3-none-any.zip" dist/waybill.zip
 
+      - name: Build plugin repo manifest
+        if: steps.existing.outputs.exists == 'false'
+        # Served at releases/latest/download/manifest.json for Dispatcharr's plugin repos.
+        run: |
+          python build_repo_manifest.py \
+            --zip dist/waybill.zip \
+            --repo "${{ github.repository }}" \
+            --tag "${{ steps.version.outputs.tag }}" \
+            --out dist/manifest.json
+
       - name: Create release
         if: steps.existing.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" dist/waybill.zip \
+          gh release create "${{ steps.version.outputs.tag }}" dist/waybill.zip dist/manifest.json \
             --target "${{ github.sha }}" \
             --title "Waybill ${{ steps.version.outputs.tag }}" \
             --generate-notes

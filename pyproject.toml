@@ -1,6 +1,6 @@
 [project]
 name = "waybill"
-version = "1.9.0"
+version = "1.9.1"
 description = "A Dispatcharr plugin for managing channel configurations using Waybill manifests"
 readme = "README.md"
 requires-python = ">=3.13"
