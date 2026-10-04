@@ -537,3 +537,78 @@ def test_priority_key_never_adds_a_stream_to_a_channel() -> None:
     # "bbb" is DAZN 2's feed: it is not pulled into DAZN 1, just reported.
     assert ids == [1]
     assert unmatched == ["bbb"]
+
+
+def test_unfiltered_members_share_one_full_stream_load(monkeypatch) -> None:
+    from src.types.config import WaybillConfig
+
+    # Behave like django.db.models.Q: an empty Q means "no restriction".
+    monkeypatch.setattr(_Q, "__bool__", lambda self: bool(self.kwargs), raising=False)
+    monkeypatch.setattr(_Q, "__invert__", lambda self: self, raising=False)
+
+    calls: list[object] = []
+
+    class CountingManager(_StreamManager):
+        def filter(self, q_filter: object) -> _StreamQuerySet:
+            calls.append(q_filter)
+            return super().filter(q_filter)
+
+    pipeline_module.Stream = _StreamStub
+    _StreamStub.objects = CountingManager(
+        [
+            _StreamStub(pk=1, name="DAZN 1 BAR FHD"),
+            _StreamStub(pk=2, name="DAZN 2 BAR FHD"),
+            _StreamStub(pk=3, name="DAZN 1"),
+        ]
+    )
+    clean = [
+        {"type": "regex", "action": "replace", "pattern": " FHD$", "replacement": ""}
+    ]
+
+    def cleaned(name: str, value: str) -> dict:
+        return {
+            "name": name,
+            "matchers": [
+                {"type": "exactMatch", "values": [value], "transformers": clean}
+            ],
+        }
+
+    config = WaybillConfig(
+        kind="WaybillConfig",
+        version="v1alpha1",
+        metadata={"name": "shared"},
+        spec={
+            "profiles": {
+                "p": {
+                    "groups": {
+                        "g": {
+                            "name": "G",
+                            "members": [
+                                cleaned("DAZN 1 Bar", "DAZN 1 BAR"),
+                                cleaned("DAZN 2 Bar", "DAZN 2 BAR"),
+                                {
+                                    "name": "DAZN 1",
+                                    "matchers": [
+                                        {"type": "exactMatch", "values": ["DAZN 1"]}
+                                    ],
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+    )
+
+    plan = pipeline_module.WaybillPipeline(config).compute_plan()
+
+    channels = {
+        c.name: [s.id for s in c.streams]
+        for m in plan.profiles[0].groups[0].members
+        for c in m.channels
+    }
+    # Pre-transformers only affect matching, so channels keep the stream names.
+    assert channels == {"DAZN 1 BAR FHD": [1], "DAZN 2 BAR FHD": [2], "DAZN 1": [3]}
+    # One shared load for both unfiltered members, plus the filtered member's
+    # own database query.
+    assert [bool(q) for q in calls] == [False, True]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from copy import copy
 from dataclasses import replace
 
@@ -38,6 +39,28 @@ from .types.plan import (
 )
 
 CHUNK_SIZE = 1000
+
+
+class AllStreams:
+    """Every stream, loaded once per plan and shared by unfiltered members.
+
+    Members whose matchers cannot be pre-filtered in the database (for example
+    ones with pre-transformers) need every stream. Loading the table once per
+    plan instead of once per member keeps apply time flat as manifests grow.
+    """
+
+    def __init__(self, chunk_size: int = CHUNK_SIZE) -> None:
+        self._chunk_size = chunk_size
+        self._streams: "list[Stream] | None" = None
+
+    def get(self) -> "list[Stream]":
+        if self._streams is None:
+            self._streams = list(
+                Stream.objects.filter(build_q_filter([])).iterator(
+                    chunk_size=self._chunk_size
+                )
+            )
+        return self._streams
 
 
 class MemberPipeline:
@@ -197,22 +220,32 @@ class MemberPipeline:
         """Return True only if ALL matchers accept the stream."""
         return all(m.match(stream) for m in self._matchers)
 
-    def process(self, chunk_size: int = CHUNK_SIZE) -> MemberPlan:
+    def process(
+        self,
+        chunk_size: int = CHUNK_SIZE,
+        all_streams: "AllStreams | None" = None,
+    ) -> MemberPlan:
         """
         Query, match, and transform streams for this member.
 
         Uses an ORM pre-filter (iregex) to reduce the result set before
         applying Python matchers for precise correctness. Streams are consumed
-        via an iterator to avoid loading the full queryset into memory.
+        via an iterator to avoid loading the full queryset into memory. When
+        the matchers cannot narrow the query at all, the plan-wide
+        *all_streams* cache is used instead of re-reading the whole table.
         Each transformer step is recorded for verbose plan output.
         """
         matched_priority_keys: set[str] = set()
         q_filter = build_q_filter(self._member.matchers)
-        qs = (
-            Stream.objects.filter(q_filter)
-            .only(*self._required_fields)
-            .iterator(chunk_size=chunk_size)
-        )
+        qs: "Iterable[Stream]"
+        if all_streams is not None and not q_filter:
+            qs = all_streams.get()
+        else:
+            qs = (
+                Stream.objects.filter(q_filter)
+                .only(*self._required_fields)
+                .iterator(chunk_size=chunk_size)
+            )
 
         # Each group holds (stream_stats, StreamRecord); stream_stats is a raw dict captured
         # while the ORM object is still in scope and passed to the plan assembler.
@@ -433,11 +466,18 @@ class GroupPipeline:
             for m in members
         ]
 
-    def process(self, chunk_size: int = CHUNK_SIZE) -> GroupPlan:
+    def process(
+        self,
+        chunk_size: int = CHUNK_SIZE,
+        all_streams: "AllStreams | None" = None,
+    ) -> GroupPlan:
         return GroupPlan(
             key=self._key,
             name=self._name,
-            members=[p.process(chunk_size=chunk_size) for p in self._pipelines],
+            members=[
+                p.process(chunk_size=chunk_size, all_streams=all_streams)
+                for p in self._pipelines
+            ],
         )
 
 
@@ -463,8 +503,15 @@ class ProfilePipeline:
             for cat_key, cat in profile.groups.items()
         ]
 
-    def process(self, chunk_size: int = CHUNK_SIZE) -> ProfilePlan:
-        groups = [c.process(chunk_size=chunk_size) for c in self._pipelines]
+    def process(
+        self,
+        chunk_size: int = CHUNK_SIZE,
+        all_streams: "AllStreams | None" = None,
+    ) -> ProfilePlan:
+        groups = [
+            c.process(chunk_size=chunk_size, all_streams=all_streams)
+            for c in self._pipelines
+        ]
         groups = _finalise_channels(groups, self._profile)
         return ProfilePlan(key=self._key, name=self._name, groups=groups)
 
@@ -510,7 +557,11 @@ class WaybillPipeline:
         ]
 
     def compute_plan(self, chunk_size: int = CHUNK_SIZE) -> WaybillPlan:
+        all_streams = AllStreams(chunk_size=chunk_size)
         return WaybillPlan(
             manifest_name=self._config.metadata.name,
-            profiles=[p.process(chunk_size=chunk_size) for p in self._profiles],
+            profiles=[
+                p.process(chunk_size=chunk_size, all_streams=all_streams)
+                for p in self._profiles
+            ],
         )
