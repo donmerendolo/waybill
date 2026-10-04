@@ -327,20 +327,32 @@ def _to_channel_number(
     return int(number)
 
 
-def _to_str_list(raw: Any, where: str, key: str) -> list[str]:
-    """Coerce a YAML list of non-empty strings; absent means an empty list."""
+def _empty_str_int_dict() -> dict[str, int]:
+    return {}
+
+
+def _to_priorities(raw: Any, where: str) -> dict[str, int]:
+    """Coerce streamPriorities: a mapping of stream hash / URL fragment to an integer."""
     if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raise ValueError(f"{where} {key} must be a list of strings")
-    values: list[str] = []
-    for item in cast(list[Any], raw):
-        if not isinstance(item, str) or not item.strip():
+        return {}
+    if not isinstance(raw, Mapping):
+        raise ValueError(
+            f"{where} streamPriorities must be a mapping of stream id to priority"
+        )
+    priorities: dict[str, int] = {}
+    for key, value in cast(Mapping[Any, Any], raw).items():
+        if not isinstance(key, str) or not key.strip():
+            # Unquoted all-digit ids are parsed by YAML as numbers (losing leading zeros).
             raise ValueError(
-                f"{where} {key} entries must be non-empty strings, got {item!r}"
+                f"{where} streamPriorities key {key!r} must be a non-empty string; "
+                "put stream ids in quotes"
             )
-        values.append(item.strip())
-    return values
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(
+                f"{where} streamPriorities[{key!r}] must be an integer, got {value!r}"
+            )
+        priorities[key.strip()] = value
+    return priorities
 
 
 def _to_bool(raw: Any, where: str, key: str) -> bool:
@@ -371,7 +383,7 @@ class ConfigMember:
     order_streams_by: OrderStreamsBy | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     channel_number: int | None = None
-    prefer_streams: list[str] = field(default_factory=_empty_str_list)
+    stream_priorities: dict[str, int] = field(default_factory=_empty_str_int_dict)
 
     def __post_init__(self):
         where = f"member {self.name!r}"
@@ -530,10 +542,9 @@ class ConfigGroup:
                 f"member {item.get('name', '')!r}",
                 "channelNumber",
             ),
-            prefer_streams=_to_str_list(
-                item.get("preferStreams"),
+            stream_priorities=_to_priorities(
+                item.get("streamPriorities"),
                 f"member {item.get('name', '')!r}",
-                "preferStreams",
             ),
         )
 

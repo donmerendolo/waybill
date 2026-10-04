@@ -148,44 +148,40 @@ def test_keep_empty_channels_must_be_boolean(value: object) -> None:
         WaybillConfig(**payload)
 
 
-@pytest.mark.parametrize("value", ["abc", [""], ["ok", 3], [None], {"a": 1}])
-def test_prefer_streams_rejects_invalid_values(value: object) -> None:
+def _member_payload(member: dict[str, object]) -> dict[str, object]:
     payload = _valid_config_payload()
     payload["spec"] = {
-        "profiles": {
-            "p": {
-                "groups": {
-                    "g": {
-                        "name": "G",
-                        "members": [{"name": "A", "preferStreams": value}],
-                    }
-                }
-            }
-        }
+        "profiles": {"p": {"groups": {"g": {"name": "G", "members": [member]}}}}
     }
+    return payload
 
-    with pytest.raises(ValueError, match="preferStreams"):
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (["abc"], "must be a mapping"),
+        ({"abc": "high"}, "must be an integer"),
+        ({"abc": 1.5}, "must be an integer"),
+        ({"abc": True}, "must be an integer"),
+        ({123: 1}, "put stream ids in quotes"),
+        ({"  ": 1}, "must be a non-empty string"),
+    ],
+)
+def test_stream_priorities_rejects_invalid_values(value: object, message: str) -> None:
+    payload = _member_payload({"name": "A", "streamPriorities": value})
+
+    with pytest.raises(ValueError, match=message):
         WaybillConfig(**payload)
 
 
-def test_prefer_streams_accepts_and_trims_strings() -> None:
-    payload = _valid_config_payload()
-    payload["spec"] = {
-        "profiles": {
-            "p": {
-                "groups": {
-                    "g": {
-                        "name": "G",
-                        "members": [{"name": "A", "preferStreams": [" abc ", "def"]}],
-                    }
-                }
-            }
-        }
-    }
+def test_stream_priorities_parses_from_yaml() -> None:
+    cfg = _load(
+        _HEAD + "spec:\n  profiles:\n    p:\n      groups:\n        g:\n"
+        "          name: G\n          members:\n            - name: A\n"
+        "              streamPriorities:\n"
+        '                "d5b2c6b9": 10\n'
+        '                " 50a8a13c ": -3\n'
+    )
 
-    cfg = WaybillConfig(**payload)
-
-    assert cfg.spec.profiles["p"].groups["g"].members[0].prefer_streams == [
-        "abc",
-        "def",
-    ]
+    member = cfg.spec.profiles["p"].groups["g"].members[0]
+    assert member.stream_priorities == {"d5b2c6b9": 10, "50a8a13c": -3}

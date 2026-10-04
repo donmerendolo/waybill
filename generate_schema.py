@@ -56,7 +56,7 @@ YAML_KEY: dict[tuple[type, str], str] = {
     (ConfigProfile, "start_channel_number"): "startChannelNumber",
     (ConfigProfile, "keep_empty_channels"): "keepEmptyChannels",
     (ConfigMember, "channel_number"): "channelNumber",
-    (ConfigMember, "prefer_streams"): "preferStreams",
+    (ConfigMember, "stream_priorities"): "streamPriorities",
 }
 
 # Fields entirely omitted from the schema (internal implementation details).
@@ -121,10 +121,12 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "after the member). Apply keeps it disabled in the profile with no streams and "
         "leaves its number, logo and EPG untouched, re-enabling it once streams match"
     ),
-    (ConfigMember, "prefer_streams"): (
-        "Streams to put first, in this order, before any orderStreamsBy sorting. Each "
-        "entry matches a stream whose stream hash equals it or whose URL contains it "
-        "(e.g. an AceStream id). Entries that match nothing are reported in the plan"
+    (ConfigMember, "stream_priorities"): (
+        "Map of stream id to integer priority (default 0). A key matches a stream whose "
+        "stream hash equals it or whose URL contains it (e.g. an AceStream id); the "
+        "first matching key in manifest order wins. Streams are ordered by priority, "
+        "highest first, then by orderStreamsBy within the same priority. Keys that "
+        "match nothing are reported in the plan"
     ),
     (ConfigMember, "channel_number"): (
         "Pins this member's first channel to this number; numbering of following "

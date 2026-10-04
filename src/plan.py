@@ -102,25 +102,19 @@ def _assemble_channel_plan(
     effective_order_streams_by: "OrderStreamsBy | None",
     needs_quality: bool,
 ) -> ChannelPlan:
-    # preferStreams matches go first, in the order they are listed; ties keep pipeline order.
-    preferred = sorted(
-        (
-            replace(r, order_reason=f"preferred #{r.preference + 1}")
-            for _, r in entries
-            if r.preference is not None
-        ),
-        key=lambda r: r.preference,
-    )
-    rest = [(stats, r) for stats, r in entries if r.preference is None]
-    if needs_quality:
-        keyed: list[tuple[StreamRecord, tuple[int, float]]] = [
-            (replace(r, order_reason=_quality_order_reason(stats)), _quality_key(stats))
-            for stats, r in rest
-        ]
-        others = [r for r, _ in sorted(keyed, key=lambda e: e[1], reverse=True)]
-    else:
-        others = [r for _, r in rest]
-    streams = preferred + others
+    # Higher streamPriorities first; quality (when enabled) only orders streams of
+    # equal priority. Python's sort is stable, so remaining ties keep pipeline order.
+    keyed: list[tuple[StreamRecord, tuple[int, int, float]]] = []
+    for stats, r in entries:
+        quality = _quality_key(stats) if needs_quality else (0, 0.0)
+        reasons = []
+        if r.priority:
+            reasons.append(f"priority {r.priority}")
+        if needs_quality:
+            reasons.append(_quality_order_reason(stats))
+        reason = ", ".join(reasons) or None
+        keyed.append((replace(r, order_reason=reason), (r.priority, *quality)))
+    streams = [r for r, _ in sorted(keyed, key=lambda e: e[1], reverse=True)]
     return ChannelPlan(
         name=name,
         epg_id=_most_common(r.tvg_id for r in streams),
@@ -211,9 +205,9 @@ class WaybillPlanFormatter:
                                 lines.append(
                                     f"        {tag} [V{v.validator_index}]: {v.validator_desc}"
                                 )
-                    for entry in member.unmatched_preferences:
+                    for key in member.unmatched_priorities:
                         lines.append(
-                            f'      [WARN] preferStreams entry matched no stream: "{entry}"'
+                            f'      [WARN] streamPriorities entry matched no stream: "{key}"'
                         )
                     if member.dropped:
                         lines.append(f"      Dropped: {member.dropped_count} stream(s)")

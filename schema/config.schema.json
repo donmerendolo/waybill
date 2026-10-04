@@ -228,12 +228,12 @@
           ],
           "description": "Pins this member's first channel to this number; numbering of following channels continues from it. Use on every member for numbers that never shift"
         },
-        "preferStreams": {
-          "type": "array",
-          "items": {
-            "type": "string"
+        "streamPriorities": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
           },
-          "description": "Streams to put first, in this order, before any orderStreamsBy sorting. Each entry matches a stream whose stream hash equals it or whose URL contains it (e.g. an AceStream id). Entries that match nothing are reported in the plan"
+          "description": "Map of stream id to integer priority (default 0). A key matches a stream whose stream hash equals it or whose URL contains it (e.g. an AceStream id); the first matching key in manifest order wins. Streams are ordered by priority, highest first, then by orderStreamsBy within the same priority. Keys that match nothing are reported in the plan"
         }
       },
       "required": [

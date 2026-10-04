@@ -109,20 +109,23 @@ members:
     ...
 ```
 
-### Preferring specific streams
+### Stream priorities
 
-Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. List the feeds you trust in `preferStreams` and they go first, in the order you list them; the remaining streams follow, sorted by `orderStreamsBy` if set. Each entry matches a stream whose Dispatcharr stream hash equals it, or whose URL contains it, so an AceStream id works:
+Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. Give individual streams an integer priority with `streamPriorities`. Every stream not listed has priority `0`. Streams are ordered by priority, highest first, and `orderStreamsBy` (e.g. quality) only orders streams that share the same priority. Give the feeds you trust a positive number, and an unreliable feed a negative one so it is only tried last:
 
 ```yaml
 - name: DAZN 1
-  preferStreams:
-    - "41418924..."   # AceStream id of the feed to try first
-    - "d5b2c6b9..."   # then this one
+  streamPriorities:
+    "d5b2c6b9...": 10    # reliable: always first, even if lower quality
+    "41418924...": 5     # next
+    "50a8a13c...": -10   # often shows the wrong channel: last resort
   matchers:
     - ...
 ```
 
-The plan marks these streams `preferred #1`, `preferred #2`, … and warns about any entry that matched none of the member's streams, so stale ids are easy to spot.
+Each key matches a stream whose Dispatcharr stream hash equals it, or whose URL contains it, so an AceStream id works. If several keys match one stream, the first one listed applies. Quote the keys: YAML reads an unquoted id made only of digits as a number. The plan shows each stream's priority next to it, and warns about any key that matched none of the member's streams, so stale ids are easy to spot.
+
+To drop a bad feed entirely instead of demoting it, exclude it with a `drop` matcher on `url`.
 
 ### Keeping channels without streams
 
