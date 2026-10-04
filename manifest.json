@@ -1,0 +1,24 @@
+{
+  "manifest": {
+    "registry_name": "donmerendolo/waybill",
+    "registry_url": "https://github.com/donmerendolo/waybill",
+    "root_url": "https://github.com/donmerendolo/waybill/releases/download",
+    "plugins": [
+      {
+        "slug": "waybill",
+        "name": "Waybill",
+        "description": "A Dispatcharr plugin for managing channel configurations using Waybill manifests",
+        "author": "@Matthew-Beckett",
+        "license": "GPL-3.0-only",
+        "repo_url": "https://github.com/donmerendolo/waybill",
+        "last_updated": "2026-10-04T14:37:07Z",
+        "latest_version": "1.9.2",
+        "latest_url": "v1.9.2/waybill.zip",
+        "latest_sha256": "321f40847d54d957bdfe4b0cd789fe002b6dd7160d62beda87055c438fffcfa1",
+        "latest_md5": "8ac22246479a346afe07ed580b041514",
+        "latest_size": 1204796,
+        "min_dispatcharr_version": "0.31.0"
+      }
+    ]
+  }
+}
