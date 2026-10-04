@@ -327,6 +327,34 @@ def _to_channel_number(
     return int(number)
 
 
+def _empty_str_int_dict() -> dict[str, int]:
+    return {}
+
+
+def _to_priorities(raw: Any, where: str) -> dict[str, int]:
+    """Coerce streamPriorities: a mapping of stream hash / URL fragment to an integer."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise ValueError(
+            f"{where} streamPriorities must be a mapping of stream id to priority"
+        )
+    priorities: dict[str, int] = {}
+    for key, value in cast(Mapping[Any, Any], raw).items():
+        if not isinstance(key, str) or not key.strip():
+            # Unquoted all-digit ids are parsed by YAML as numbers (losing leading zeros).
+            raise ValueError(
+                f"{where} streamPriorities key {key!r} must be a non-empty string; "
+                "put stream ids in quotes"
+            )
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(
+                f"{where} streamPriorities[{key!r}] must be an integer, got {value!r}"
+            )
+        priorities[key.strip()] = value
+    return priorities
+
+
 def _to_bool(raw: Any, where: str, key: str) -> bool:
     """Coerce a YAML boolean setting; absent means False."""
     if raw is None:
@@ -355,6 +383,7 @@ class ConfigMember:
     order_streams_by: OrderStreamsBy | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     channel_number: int | None = None
+    stream_priorities: dict[str, int] = field(default_factory=_empty_str_int_dict)
 
     def __post_init__(self):
         where = f"member {self.name!r}"
@@ -512,6 +541,10 @@ class ConfigGroup:
                 item.get("channelNumber"),
                 f"member {item.get('name', '')!r}",
                 "channelNumber",
+            ),
+            stream_priorities=_to_priorities(
+                item.get("streamPriorities"),
+                f"member {item.get('name', '')!r}",
             ),
         )
 

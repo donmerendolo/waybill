@@ -146,3 +146,42 @@ def test_keep_empty_channels_must_be_boolean(value: object) -> None:
 
     with pytest.raises(ValueError, match="keepEmptyChannels must be true or false"):
         WaybillConfig(**payload)
+
+
+def _member_payload(member: dict[str, object]) -> dict[str, object]:
+    payload = _valid_config_payload()
+    payload["spec"] = {
+        "profiles": {"p": {"groups": {"g": {"name": "G", "members": [member]}}}}
+    }
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (["abc"], "must be a mapping"),
+        ({"abc": "high"}, "must be an integer"),
+        ({"abc": 1.5}, "must be an integer"),
+        ({"abc": True}, "must be an integer"),
+        ({123: 1}, "put stream ids in quotes"),
+        ({"  ": 1}, "must be a non-empty string"),
+    ],
+)
+def test_stream_priorities_rejects_invalid_values(value: object, message: str) -> None:
+    payload = _member_payload({"name": "A", "streamPriorities": value})
+
+    with pytest.raises(ValueError, match=message):
+        WaybillConfig(**payload)
+
+
+def test_stream_priorities_parses_from_yaml() -> None:
+    cfg = _load(
+        _HEAD + "spec:\n  profiles:\n    p:\n      groups:\n        g:\n"
+        "          name: G\n          members:\n            - name: A\n"
+        "              streamPriorities:\n"
+        '                "d5b2c6b9": 10\n'
+        '                " 50a8a13c ": -3\n'
+    )
+
+    member = cfg.spec.profiles["p"].groups["g"].members[0]
+    assert member.stream_priorities == {"d5b2c6b9": 10, "50a8a13c": -3}

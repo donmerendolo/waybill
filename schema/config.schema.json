@@ -227,6 +227,13 @@
             "null"
           ],
           "description": "Pins this member's first channel to this number; numbering of following channels continues from it. Use on every member for numbers that never shift"
+        },
+        "streamPriorities": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Map of stream URL fragment (e.g. an AceStream id) or stream hash to integer priority (default 0). A key matches a stream whose URL contains it or whose stream hash equals it; the first matching key in manifest order wins. Streams are ordered by priority, highest first, then by orderStreamsBy within the same priority. Keys that match nothing are reported in the plan"
         }
       },
       "required": [

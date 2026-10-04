@@ -109,6 +109,26 @@ members:
     ...
 ```
 
+### Stream priorities
+
+Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. Give individual feeds an integer priority with `streamPriorities`. Every feed not listed has priority `0`. Streams are ordered by priority, highest first, and `orderStreamsBy` (e.g. quality) only orders streams that share the same priority. Give feeds you trust a positive number, and unreliable ones a negative number so they are only tried last:
+
+```yaml
+- name: DAZN F1
+  streamPriorities:
+    "6422e8bc34282871634c81947be093c04ad1bb29": 10    # reliable: always first, even over 4K
+    "4bc6f4cb6697c1defc981c0afe1a4c3a62284aee": -10   # often the wrong channel: last resort
+  matchers:
+    - type: exactMatch
+      values: ["DAZN F1", "DAZN F1 FHD", "DAZN F1 SD", ...]
+```
+
+A key matches a feed whose **URL contains it**, such as an AceStream id, or whose Dispatcharr stream hash equals it. If several keys match one feed, the first one listed applies. Quote the keys, because YAML reads an id made only of digits as a number.
+
+Matchers and priorities use different identifiers on purpose. Use names in matchers to decide which streams belong to a channel, since names survive provider refreshes. Use URLs in `streamPriorities` to rank individual feeds, since several feeds often share a name. If a feed's URL changes, its key stops matching and the feed falls back to priority 0, so nothing breaks; the plan warns about every key that matched none of the member's streams, so stale keys are easy to spot.
+
+Priorities only order the streams a member's matchers already selected: a key never adds a stream to a channel. The plan shows each stream's priority next to it.
+
 ### Keeping channels without streams
 
 By default a member that matches no streams produces no channel. Set `keepEmptyChannels: true` on a profile to keep it instead: the channel (named after the member) stays in Dispatcharr, apply removes its streams and **disables** it in the profile, and its number, logo and EPG are left untouched. The next apply that finds matching streams again fills it in and re-enables it. The plan marks these channels as `no streams, kept disabled`.
@@ -533,7 +553,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.x – 1.8.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x – 1.9.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.

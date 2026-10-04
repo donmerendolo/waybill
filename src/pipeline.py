@@ -74,6 +74,9 @@ class MemberPipeline:
         )
         if self._effective_order_streams_by is OrderStreamsBy.QUALITY:
             self._required_fields.add("stream_stats")
+        self._stream_priorities: dict[str, int] = member.stream_priorities
+        if self._stream_priorities:
+            self._required_fields |= {"stream_hash", "url"}
         self._matcher_descs: list[str] = [m.describe() for m in self._matchers]
         self._transformer_descs: list[str] = [t.describe() for t in self._transformers]
 
@@ -203,6 +206,7 @@ class MemberPipeline:
         via an iterator to avoid loading the full queryset into memory.
         Each transformer step is recorded for verbose plan output.
         """
+        matched_priority_keys: set[str] = set()
         q_filter = build_q_filter(self._member.matchers)
         qs = (
             Stream.objects.filter(q_filter)
@@ -291,6 +295,9 @@ class MemberPipeline:
 
             if not was_dropped:
                 stream_stats = getattr(stream, "stream_stats", None)
+                priority_key = self._priority_key(stream)
+                if priority_key is not None:
+                    matched_priority_keys.add(priority_key)
                 groups[working.name].append(
                     (
                         stream_stats,
@@ -302,6 +309,11 @@ class MemberPipeline:
                             # overrides of tvg_id and logo_url reach the channel.
                             tvg_id=working.tvg_id,
                             logo_url=working.logo_url,
+                            priority=(
+                                self._stream_priorities[priority_key]
+                                if priority_key is not None
+                                else 0
+                            ),
                             captures=declared_vars,
                             steps=steps,
                             variable_events=var_events,
@@ -362,7 +374,29 @@ class MemberPipeline:
             member_plan,
             validator_descs=self._validator_descs,
             violations=all_violations,
+            unmatched_priorities=[
+                key
+                for key in self._stream_priorities
+                if key not in matched_priority_keys
+            ],
         )
+
+    def _priority_key(self, stream: "Stream") -> "str | None":
+        """First streamPriorities key (in manifest order) matching this stream.
+
+        A key matches when it is part of the stream's URL (e.g. an AceStream id)
+        or equals its stream hash. Priorities rank individual feeds, which can
+        share a name, so names are deliberately not used; a key whose feed has
+        gone away simply stops matching and is reported in the plan.
+        """
+        if not self._stream_priorities:
+            return None
+        stream_hash = getattr(stream, "stream_hash", None) or ""
+        url = getattr(stream, "url", None) or ""
+        for key in self._stream_priorities:
+            if key in url or key == stream_hash:
+                return key
+        return None
 
 
 class GroupPipeline:

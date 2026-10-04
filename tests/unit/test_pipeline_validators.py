@@ -55,12 +55,16 @@ class _StreamStub:
         tvg_id: str | None = None,
         logo_url: str | None = None,
         stream_stats: dict | None = None,
+        url: str | None = None,
+        stream_hash: str | None = None,
     ) -> None:
         self.pk = pk
         self.name = name
         self.tvg_id = tvg_id
         self.logo_url = logo_url
         self.stream_stats = stream_stats
+        self.url = url
+        self.stream_hash = stream_hash
 
 
 _channels_models = types.ModuleType("apps.channels.models")
@@ -88,7 +92,7 @@ for _mod_name, _mod in (
     sys.modules[_mod_name] = _mod
 
 import src.pipeline as pipeline_module  # noqa: E402
-from src.types.config import ConfigMember  # noqa: E402
+from src.types.config import ConfigMember, OrderStreamsBy  # noqa: E402
 
 pipeline_module.Stream = _StreamStub
 MemberPipeline = pipeline_module.MemberPipeline
@@ -392,3 +396,144 @@ def test_channel_number_pin_continues_sequence() -> None:
         ("B", 10),
         ("C", 11),
     ]
+
+
+def _hd(height: int) -> dict:
+    return {"resolution": f"1920x{height}", "video_bitrate": 1000}
+
+
+def _priority_member(priorities: dict[str, int], quality: bool = True) -> ConfigMember:
+
+    return ConfigMember(
+        name="DAZN 1",
+        matchers=[{"type": "exactMatch", "values": ["DAZN 1"]}],
+        stream_priorities=priorities,
+        order_streams_by=OrderStreamsBy.QUALITY if quality else None,
+    )
+
+
+def _ordered(member: ConfigMember) -> "tuple[list[int], list[str | None], list[str]]":
+    result = MemberPipeline(member).process()
+    streams = result.channels[0].streams
+    return (
+        [s.id for s in streams],
+        [s.order_reason for s in streams],
+        result.unmatched_priorities,
+    )
+
+
+def _ace(pk: int, ace_id: str, height: int) -> _StreamStub:
+    return _StreamStub(
+        pk=pk,
+        name="DAZN 1",
+        url=f"http://x/ace/getstream?id={ace_id}",
+        stream_stats=_hd(height),
+    )
+
+
+def test_priority_beats_quality_and_negative_sinks_to_bottom() -> None:
+    _set_streams(
+        _ace(1, "aaa", 1080),  # unlisted: priority 0
+        _ace(2, "bbb", 480),  # trusted but low quality
+        _ace(3, "ccc", 2160),  # best quality but unreliable
+        _ace(4, "ddd", 720),  # unlisted: priority 0
+    )
+
+    ids, reasons, unmatched = _ordered(_priority_member({"bbb": 5, "ccc": -1}))
+
+    # 5 first; the two 0s by quality; -1 last despite being 4K.
+    assert ids == [2, 1, 4, 3]
+    assert reasons[0] == "priority 5, quality: 480p, 1000kbps"
+    assert reasons[-1] == "priority -1, quality: 2160p, 1000kbps"
+    assert unmatched == []
+
+
+def test_equal_priorities_fall_back_to_quality() -> None:
+    _set_streams(_ace(1, "aaa", 720), _ace(2, "bbb", 1080))
+
+    ids, _, _ = _ordered(_priority_member({"aaa": 3, "bbb": 3}))
+
+    assert ids == [2, 1]
+
+
+def test_priorities_without_quality_keep_pipeline_order_on_ties() -> None:
+    _set_streams(_ace(1, "aaa", 0), _ace(2, "bbb", 0), _ace(3, "ccc", 0))
+
+    ids, reasons, _ = _ordered(_priority_member({"ccc": 1}, quality=False))
+
+    assert ids == [3, 1, 2]
+    assert reasons == ["priority 1", None, None]
+
+
+def test_priority_matches_stream_hash_exactly() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="DAZN 1", url="http://x/1", stream_hash="h1"),
+        _StreamStub(pk=2, name="DAZN 1", url="http://x/2", stream_hash="h2"),
+    )
+
+    ids, _, _ = _ordered(_priority_member({"h2": 1}, quality=False))
+
+    assert ids == [2, 1]
+
+
+def test_first_matching_priority_key_wins() -> None:
+    _set_streams(_ace(1, "abc123", 0), _ace(2, "zzz", 0))
+
+    # Both keys match stream 1's URL; the first listed (-5) applies.
+    ids, reasons, unmatched = _ordered(
+        _priority_member({"abc": -5, "abc123": 9}, quality=False)
+    )
+
+    assert ids == [2, 1]
+    assert reasons == [None, "priority -5"]
+    assert unmatched == ["abc123"]
+
+
+def test_priority_keys_matching_nothing_are_reported() -> None:
+    _set_streams(_ace(1, "aaa", 0))
+
+    _, _, unmatched = _ordered(_priority_member({"zzz": 1, "aaa": 1}, quality=False))
+
+    assert unmatched == ["zzz"]
+
+
+def test_without_priorities_order_is_unchanged() -> None:
+    _set_streams(_ace(1, "aaa", 720), _ace(2, "bbb", 1080))
+
+    ids, reasons, unmatched = _ordered(_priority_member({}))
+
+    assert ids == [2, 1]
+    assert reasons == ["quality: 1080p, 1000kbps", "quality: 720p, 1000kbps"]
+    assert unmatched == []
+
+
+def test_priority_keys_do_not_match_stream_names() -> None:
+    # Feeds share names, so priorities target URLs; a name key matches nothing.
+    _set_streams(
+        _ace(1, "aaa", 1080),
+        _ace(2, "bbb", 720),
+    )
+
+    ids, reasons, unmatched = _ordered(_priority_member({"DAZN 1": 5}))
+
+    assert ids == [1, 2]
+    assert all(r is not None and not r.startswith("priority") for r in reasons)
+    assert unmatched == ["DAZN 1"]
+
+
+def test_priority_key_never_adds_a_stream_to_a_channel() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="DAZN 1", url="http://x/ace/getstream?id=aaa"),
+        _StreamStub(pk=2, name="DAZN 2", url="http://x/ace/getstream?id=bbb"),
+    )
+    member = ConfigMember(
+        name="DAZN 1",
+        matchers=[{"type": "exactMatch", "values": ["DAZN 1"]}],
+        stream_priorities={"bbb": 99},
+    )
+
+    ids, _, unmatched = _ordered(member)
+
+    # "bbb" is DAZN 2's feed: it is not pulled into DAZN 1, just reported.
+    assert ids == [1]
+    assert unmatched == ["bbb"]

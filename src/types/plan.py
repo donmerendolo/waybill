@@ -105,6 +105,8 @@ class StreamRecord:
     tvg_id: str | None = None
     logo_url: str | None = None
     order_reason: str | None = None
+    # From the member's streamPriorities; higher sorts first, unlisted streams are 0.
+    priority: int = 0
     captures: dict[str, str] = field(default_factory=_empty_captures_dict)
     steps: list[TransformStep] = field(default_factory=_empty_transform_steps)
     variable_events: list[VariableEvent] = field(default_factory=_empty_variable_events)
@@ -139,6 +141,8 @@ class MemberPlan:
     channels: list[ChannelPlan] = field(default_factory=_empty_channel_plans)
     dropped: list[DroppedRecord] = field(default_factory=_empty_dropped_records)
     violations: list[ValidatorViolation] = field(default_factory=_empty_violations)
+    # streamPriorities keys that matched none of this member's streams.
+    unmatched_priorities: list[str] = field(default_factory=_empty_str_list)
 
     @property
     def dropped_count(self) -> int:
