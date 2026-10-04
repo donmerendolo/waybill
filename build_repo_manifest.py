@@ -51,7 +51,9 @@ def build_manifest(
         "latest_url": f"{tag}/{zip_name}",
         "latest_sha256": hashlib.sha256(zip_bytes).hexdigest(),
         "latest_md5": hashlib.md5(zip_bytes).hexdigest(),
-        "latest_size": len(zip_bytes),
+        # Kilobytes, rounded down: Dispatcharr's UI renders this field with
+        # formatKB, and the official plugin repo publishes size_kb here.
+        "latest_size": len(zip_bytes) // 1024,
     }
     for key in ("min_dispatcharr_version", "max_dispatcharr_version"):
         if plugin.get(key):

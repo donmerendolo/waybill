@@ -10,7 +10,7 @@ from pathlib import Path
 from build_repo_manifest import build_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ZIP = b"PK\x03\x04 fake plugin zip"
+ZIP = b"PK\x03\x04" + b"\0" * 1_204_770  # 1,204,774 bytes, the size of a real build
 NOW = datetime(2026, 10, 4, 12, 0, 0, tzinfo=timezone.utc)
 
 # Mirrors apps/plugins/api_views.py _OFFICIAL_NAME_PATTERNS in Dispatcharr v0.31.
@@ -69,7 +69,8 @@ def test_entry_describes_this_release() -> None:
     assert entry["latest_version"] == plugin["version"]
     assert entry["latest_sha256"] == hashlib.sha256(ZIP).hexdigest()
     assert entry["latest_md5"] == hashlib.md5(ZIP).hexdigest()
-    assert entry["latest_size"] == len(ZIP)
+    # Dispatcharr shows latest_size as kilobytes (formatKB), not bytes.
+    assert entry["latest_size"] == 1176
     assert entry["min_dispatcharr_version"] == plugin["min_dispatcharr_version"]
     assert entry["last_updated"] == "2026-10-04T12:00:00Z"
     assert "max_dispatcharr_version" not in entry
