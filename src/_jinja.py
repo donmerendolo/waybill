@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import lru_cache
+
 import jinja2
 
 _JINJA_ENV = jinja2.Environment(
@@ -21,8 +23,12 @@ def render_template(
     *variables*.  *context_desc* is appended to the error message to identify
     the calling site (e.g. ``'set transformer "name" field'``).
     """
+    # Most values are plain text and this runs per stream per matcher/transformer,
+    # so skip Jinja entirely when there is nothing to render.
+    if not _has_template_syntax(value):
+        return value
     try:
-        return _JINJA_ENV.from_string(value).render(**variables)
+        return _compile(value).render(**variables)
     except jinja2.UndefinedError as exc:
         suffix = f" in {context_desc}" if context_desc else ""
         raise ValueError(f"Undefined template variable{suffix}: {exc}") from exc
@@ -38,5 +44,23 @@ def extract_template_variables(template_str: str) -> list[str]:
     ``{% if %}``) are also included — acceptable for an observational logging
     feature.
     """
+    if not _has_template_syntax(template_str):
+        return []
+    return list(_template_variables(template_str))
+
+
+def _has_template_syntax(value: str) -> bool:
+    return "{{" in value or "{%" in value or "{#" in value
+
+
+@lru_cache(maxsize=1024)
+def _compile(value: str) -> jinja2.Template:
+    # Compiling is far more expensive than rendering; manifests reuse a small
+    # set of template strings across every stream.
+    return _JINJA_ENV.from_string(value)
+
+
+@lru_cache(maxsize=1024)
+def _template_variables(template_str: str) -> tuple[str, ...]:
     ast = _JINJA_ENV.parse(template_str)
-    return [node.name for node in ast.find_all(jinja2.nodes.Name)]
+    return tuple(node.name for node in ast.find_all(jinja2.nodes.Name))
