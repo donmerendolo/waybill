@@ -564,7 +564,25 @@ The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in
 
 Download `waybill.zip` from the [latest release](https://github.com/donmerendolo/waybill/releases/latest) and upload it in Dispatcharr under **Plugins → Import Plugin**. Keep the file name `waybill.zip`: Dispatcharr names the plugin after it, so re-importing with **Overwrite** updates the existing install.
 
-Releases are built by the `Build and Release` workflow on every push to `main`. It publishes a release tagged `v<version>` from `pyproject.toml` (which must match `plugin.json`) and skips the run if that release already exists, so bump the version in both files to publish a new one.
+### Updating from the Dispatcharr dashboard
+
+Each release also publishes a plugin-repo manifest, so Dispatcharr can show new versions and install them for you:
+
+1. In Dispatcharr's **Plugins** page, click **Manage Repos** and add this as the **Repository Manifest URL**:
+
+   ```text
+   https://github.com/donmerendolo/waybill/releases/latest/download/manifest.json
+   ```
+
+   The repo shows up as `donmerendolo/waybill`. It is unsigned, so Dispatcharr marks it as unverified.
+
+2. Find **Waybill** from `donmerendolo/waybill` in the available plugins and click **Install**. If you imported Waybill by hand before, Dispatcharr notes that it was installed manually and that installing from the repo takes over management; it replaces the plugin in place and keeps your settings (manifest and apply mode).
+
+3. When a new release is published, the plugin shows **Update Available**; update it from there.
+
+The official Dispatcharr plugin repo also lists a `waybill` (the original, older project). Install this one from `donmerendolo/waybill`; Dispatcharr shows the other listing as installed from a different repo.
+
+Releases are built by the `Build and Release` workflow on every push to `main`. It publishes a release tagged `v<version>` from `pyproject.toml` (which must match `plugin.json`), with `waybill.zip` and the repo `manifest.json` (built by `build_repo_manifest.py`) attached, and skips the run if that release already exists, so bump the version in both files to publish a new one.
 
 To build the plugin ZIP yourself:
 
