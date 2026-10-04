@@ -111,21 +111,22 @@ members:
 
 ### Stream priorities
 
-Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. Give individual streams an integer priority with `streamPriorities`. Every stream not listed has priority `0`. Streams are ordered by priority, highest first, and `orderStreamsBy` (e.g. quality) only orders streams that share the same priority. Give the feeds you trust a positive number, and an unreliable feed a negative one so it is only tried last:
+Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. Give streams an integer priority with `streamPriorities`. Every stream not listed has priority `0`. Streams are ordered by priority, highest first, and `orderStreamsBy` (e.g. quality) only orders streams that share the same priority. Give feeds you trust a positive number, and unreliable ones a negative number so they are only tried last:
 
 ```yaml
-- name: DAZN 1
+- name: DAZN F1
   streamPriorities:
-    "d5b2c6b9...": 10    # reliable: always first, even if lower quality
-    "41418924...": 5     # next
-    "50a8a13c...": -10   # often shows the wrong channel: last resort
+    "DAZN F1 FHD": 10   # reliable: always first, even over the 4K feed
+    "DAZN F1 SD": -10   # often shows the wrong channel: last resort
   matchers:
     - ...
 ```
 
-Each key matches a stream whose Dispatcharr stream hash equals it, or whose URL contains it, so an AceStream id works. If several keys match one stream, the first one listed applies. Quote the keys: YAML reads an unquoted id made only of digits as a number. The plan shows each stream's priority next to it, and warns about any key that matched none of the member's streams, so stale ids are easy to spot.
+Keys are normally stream **names**, as shown on Dispatcharr's Streams page (case is ignored); every stream with that name gets the priority. Names survive provider refreshes, while stream hashes and URL ids (such as AceStream ids) can change. Where a name is shared by feeds you need to tell apart, a key can also be a stream hash or any part of a stream's URL. If several keys match one stream, the first one listed applies. Quote keys that are made only of digits, because YAML would otherwise read them as numbers.
 
-To drop a bad feed entirely instead of demoting it, exclude it with a `drop` matcher on `url`.
+Priorities only order the streams a member's matchers already selected: a key never adds a stream to a channel. The plan shows each stream's priority next to it, and warns about any key that matched none of the member's streams, so stale keys are easy to spot.
+
+To drop a bad feed entirely instead of demoting it, exclude it with a `drop` matcher.
 
 ### Keeping channels without streams
 

@@ -382,13 +382,19 @@ class MemberPipeline:
         )
 
     def _priority_key(self, stream: "Stream") -> "str | None":
-        """First streamPriorities key (in manifest order) that is this stream's hash or part of its URL."""
+        """First streamPriorities key (in manifest order) matching this stream.
+
+        A key matches the stream's original name (ignoring case), its stream
+        hash, or any part of its URL. Names are the stable choice; hashes and
+        URL ids change when a provider rotates its feeds.
+        """
         if not self._stream_priorities:
             return None
+        name = (getattr(stream, "name", None) or "").casefold()
         stream_hash = getattr(stream, "stream_hash", None) or ""
         url = getattr(stream, "url", None) or ""
         for key in self._stream_priorities:
-            if key == stream_hash or key in url:
+            if key.casefold() == name or key == stream_hash or key in url:
                 return key
         return None
 

@@ -92,7 +92,7 @@ for _mod_name, _mod in (
     sys.modules[_mod_name] = _mod
 
 import src.pipeline as pipeline_module  # noqa: E402
-from src.types.config import ConfigMember  # noqa: E402
+from src.types.config import ConfigMember, OrderStreamsBy  # noqa: E402
 
 pipeline_module.Stream = _StreamStub
 MemberPipeline = pipeline_module.MemberPipeline
@@ -506,3 +506,43 @@ def test_without_priorities_order_is_unchanged() -> None:
     assert ids == [2, 1]
     assert reasons == ["quality: 1080p, 1000kbps", "quality: 720p, 1000kbps"]
     assert unmatched == []
+
+
+def test_priority_matches_stream_name_ignoring_case() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="DAZN 1 FHD", stream_stats=_hd(1080)),
+        _StreamStub(pk=2, name="DAZN 1", stream_stats=_hd(2160)),
+        _StreamStub(pk=3, name="DAZN 1 FHD", stream_stats=_hd(720)),
+    )
+    member = ConfigMember(
+        name="DAZN 1",
+        matchers=[{"type": "exactMatch", "values": ["DAZN 1", "DAZN 1 FHD"]}],
+        transformers=[{"type": "setMetadata", "name": "DAZN 1"}],
+        stream_priorities={"dazn 1 fhd": 5},
+        order_streams_by=OrderStreamsBy.QUALITY,
+    )
+
+    ids, reasons, unmatched = _ordered(member)
+
+    # Both "DAZN 1 FHD" feeds get priority 5 (ordered by quality between them),
+    # ahead of the higher-quality "DAZN 1" feed at priority 0.
+    assert ids == [1, 3, 2]
+    assert reasons[0].startswith("priority 5")
+    assert unmatched == []
+
+
+def test_priority_key_never_adds_a_stream_to_a_channel() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="DAZN 1"),
+        _StreamStub(pk=2, name="DAZN 2"),
+    )
+    member = ConfigMember(
+        name="DAZN 1",
+        matchers=[{"type": "exactMatch", "values": ["DAZN 1"]}],
+        stream_priorities={"DAZN 2": 99},
+    )
+
+    ids, _, unmatched = _ordered(member)
+
+    assert ids == [1]
+    assert unmatched == ["DAZN 2"]
