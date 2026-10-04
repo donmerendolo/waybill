@@ -122,10 +122,10 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "leaves its number, logo and EPG untouched, re-enabling it once streams match"
     ),
     (ConfigMember, "stream_priorities"): (
-        "Map of stream name (or stream hash / URL fragment) to integer priority "
-        "(default 0). A key matches a stream whose name equals it ignoring case, whose "
-        "stream hash equals it, or whose URL contains it; the first matching key in "
-        "manifest order wins. Streams are ordered by priority, "
+        "Map of stream URL fragment (e.g. an AceStream id) or stream hash to integer "
+        "priority (default 0). A key matches a stream whose URL contains it or whose "
+        "stream hash equals it; the first matching key in manifest order wins. Streams "
+        "are ordered by priority, "
         "highest first, then by orderStreamsBy within the same priority. Keys that "
         "match nothing are reported in the plan"
     ),

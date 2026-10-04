@@ -403,7 +403,6 @@ def _hd(height: int) -> dict:
 
 
 def _priority_member(priorities: dict[str, int], quality: bool = True) -> ConfigMember:
-    from src.types.config import OrderStreamsBy
 
     return ConfigMember(
         name="DAZN 1",
@@ -508,41 +507,33 @@ def test_without_priorities_order_is_unchanged() -> None:
     assert unmatched == []
 
 
-def test_priority_matches_stream_name_ignoring_case() -> None:
+def test_priority_keys_do_not_match_stream_names() -> None:
+    # Feeds share names, so priorities target URLs; a name key matches nothing.
     _set_streams(
-        _StreamStub(pk=1, name="DAZN 1 FHD", stream_stats=_hd(1080)),
-        _StreamStub(pk=2, name="DAZN 1", stream_stats=_hd(2160)),
-        _StreamStub(pk=3, name="DAZN 1 FHD", stream_stats=_hd(720)),
-    )
-    member = ConfigMember(
-        name="DAZN 1",
-        matchers=[{"type": "exactMatch", "values": ["DAZN 1", "DAZN 1 FHD"]}],
-        transformers=[{"type": "setMetadata", "name": "DAZN 1"}],
-        stream_priorities={"dazn 1 fhd": 5},
-        order_streams_by=OrderStreamsBy.QUALITY,
+        _ace(1, "aaa", 1080),
+        _ace(2, "bbb", 720),
     )
 
-    ids, reasons, unmatched = _ordered(member)
+    ids, reasons, unmatched = _ordered(_priority_member({"DAZN 1": 5}))
 
-    # Both "DAZN 1 FHD" feeds get priority 5 (ordered by quality between them),
-    # ahead of the higher-quality "DAZN 1" feed at priority 0.
-    assert ids == [1, 3, 2]
-    assert reasons[0].startswith("priority 5")
-    assert unmatched == []
+    assert ids == [1, 2]
+    assert all(r is not None and not r.startswith("priority") for r in reasons)
+    assert unmatched == ["DAZN 1"]
 
 
 def test_priority_key_never_adds_a_stream_to_a_channel() -> None:
     _set_streams(
-        _StreamStub(pk=1, name="DAZN 1"),
-        _StreamStub(pk=2, name="DAZN 2"),
+        _StreamStub(pk=1, name="DAZN 1", url="http://x/ace/getstream?id=aaa"),
+        _StreamStub(pk=2, name="DAZN 2", url="http://x/ace/getstream?id=bbb"),
     )
     member = ConfigMember(
         name="DAZN 1",
         matchers=[{"type": "exactMatch", "values": ["DAZN 1"]}],
-        stream_priorities={"DAZN 2": 99},
+        stream_priorities={"bbb": 99},
     )
 
     ids, _, unmatched = _ordered(member)
 
+    # "bbb" is DAZN 2's feed: it is not pulled into DAZN 1, just reported.
     assert ids == [1]
-    assert unmatched == ["DAZN 2"]
+    assert unmatched == ["bbb"]

@@ -384,17 +384,17 @@ class MemberPipeline:
     def _priority_key(self, stream: "Stream") -> "str | None":
         """First streamPriorities key (in manifest order) matching this stream.
 
-        A key matches the stream's original name (ignoring case), its stream
-        hash, or any part of its URL. Names are the stable choice; hashes and
-        URL ids change when a provider rotates its feeds.
+        A key matches when it is part of the stream's URL (e.g. an AceStream id)
+        or equals its stream hash. Priorities rank individual feeds, which can
+        share a name, so names are deliberately not used; a key whose feed has
+        gone away simply stops matching and is reported in the plan.
         """
         if not self._stream_priorities:
             return None
-        name = (getattr(stream, "name", None) or "").casefold()
         stream_hash = getattr(stream, "stream_hash", None) or ""
         url = getattr(stream, "url", None) or ""
         for key in self._stream_priorities:
-            if key.casefold() == name or key == stream_hash or key in url:
+            if key in url or key == stream_hash:
                 return key
         return None
 
