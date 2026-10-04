@@ -92,7 +92,7 @@ def matcher_to_q(cfg: ConfigMatcher) -> Q:
         return ~q if is_drop else q
 
     if cfg.type == MatcherType.CONTAINS_ANY:
-        if not cfg.substrings:
+        if not cfg.substrings or cfg.transformers:
             return Q()
         lookup = "contains" if cfg.case_sensitive else "icontains"
         q = Q()
@@ -101,7 +101,7 @@ def matcher_to_q(cfg: ConfigMatcher) -> Q:
         return ~q if is_drop else q
 
     if cfg.type == MatcherType.EXACT_MATCH:
-        if not cfg.values:
+        if not cfg.values or cfg.transformers:
             return Q()
         if cfg.case_sensitive:
             q = Q(**{f"{cfg.field}__in": cfg.values})
