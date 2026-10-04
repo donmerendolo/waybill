@@ -146,3 +146,46 @@ def test_keep_empty_channels_must_be_boolean(value: object) -> None:
 
     with pytest.raises(ValueError, match="keepEmptyChannels must be true or false"):
         WaybillConfig(**payload)
+
+
+@pytest.mark.parametrize("value", ["abc", [""], ["ok", 3], [None], {"a": 1}])
+def test_prefer_streams_rejects_invalid_values(value: object) -> None:
+    payload = _valid_config_payload()
+    payload["spec"] = {
+        "profiles": {
+            "p": {
+                "groups": {
+                    "g": {
+                        "name": "G",
+                        "members": [{"name": "A", "preferStreams": value}],
+                    }
+                }
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="preferStreams"):
+        WaybillConfig(**payload)
+
+
+def test_prefer_streams_accepts_and_trims_strings() -> None:
+    payload = _valid_config_payload()
+    payload["spec"] = {
+        "profiles": {
+            "p": {
+                "groups": {
+                    "g": {
+                        "name": "G",
+                        "members": [{"name": "A", "preferStreams": [" abc ", "def"]}],
+                    }
+                }
+            }
+        }
+    }
+
+    cfg = WaybillConfig(**payload)
+
+    assert cfg.spec.profiles["p"].groups["g"].members[0].prefer_streams == [
+        "abc",
+        "def",
+    ]

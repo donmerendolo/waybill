@@ -327,6 +327,22 @@ def _to_channel_number(
     return int(number)
 
 
+def _to_str_list(raw: Any, where: str, key: str) -> list[str]:
+    """Coerce a YAML list of non-empty strings; absent means an empty list."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError(f"{where} {key} must be a list of strings")
+    values: list[str] = []
+    for item in cast(list[Any], raw):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(
+                f"{where} {key} entries must be non-empty strings, got {item!r}"
+            )
+        values.append(item.strip())
+    return values
+
+
 def _to_bool(raw: Any, where: str, key: str) -> bool:
     """Coerce a YAML boolean setting; absent means False."""
     if raw is None:
@@ -355,6 +371,7 @@ class ConfigMember:
     order_streams_by: OrderStreamsBy | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     channel_number: int | None = None
+    prefer_streams: list[str] = field(default_factory=_empty_str_list)
 
     def __post_init__(self):
         where = f"member {self.name!r}"
@@ -512,6 +529,11 @@ class ConfigGroup:
                 item.get("channelNumber"),
                 f"member {item.get('name', '')!r}",
                 "channelNumber",
+            ),
+            prefer_streams=_to_str_list(
+                item.get("preferStreams"),
+                f"member {item.get('name', '')!r}",
+                "preferStreams",
             ),
         )
 

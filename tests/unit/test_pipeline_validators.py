@@ -55,12 +55,16 @@ class _StreamStub:
         tvg_id: str | None = None,
         logo_url: str | None = None,
         stream_stats: dict | None = None,
+        url: str | None = None,
+        stream_hash: str | None = None,
     ) -> None:
         self.pk = pk
         self.name = name
         self.tvg_id = tvg_id
         self.logo_url = logo_url
         self.stream_stats = stream_stats
+        self.url = url
+        self.stream_hash = stream_hash
 
 
 _channels_models = types.ModuleType("apps.channels.models")
@@ -392,3 +396,98 @@ def test_channel_number_pin_continues_sequence() -> None:
         ("B", 10),
         ("C", 11),
     ]
+
+
+def _hd(height: int) -> dict:
+    return {"resolution": f"1920x{height}", "video_bitrate": 1000}
+
+
+def _prefer_member(prefer: list[str], quality: bool = True) -> ConfigMember:
+    from src.types.config import OrderStreamsBy
+
+    return ConfigMember(
+        name="DAZN 1",
+        matchers=[{"type": "exactMatch", "values": ["DAZN 1"]}],
+        prefer_streams=prefer,
+        order_streams_by=OrderStreamsBy.QUALITY if quality else None,
+    )
+
+
+def _stream_ids(
+    member: ConfigMember,
+) -> "tuple[list[int], list[str | None], list[str]]":
+    result = MemberPipeline(member).process()
+    streams = result.channels[0].streams
+    return (
+        [s.id for s in streams],
+        [s.order_reason for s in streams],
+        result.unmatched_preferences,
+    )
+
+
+def test_prefer_streams_go_first_in_listed_order_then_quality() -> None:
+    _set_streams(
+        _StreamStub(
+            pk=1,
+            name="DAZN 1",
+            url="http://x/ace/getstream?id=aaa",
+            stream_stats=_hd(1080),
+        ),
+        _StreamStub(
+            pk=2,
+            name="DAZN 1",
+            url="http://x/ace/getstream?id=bbb",
+            stream_stats=_hd(720),
+        ),
+        _StreamStub(
+            pk=3,
+            name="DAZN 1",
+            url="http://x/ace/getstream?id=ccc",
+            stream_stats=_hd(2160),
+        ),
+        _StreamStub(
+            pk=4,
+            name="DAZN 1",
+            url="http://x/ace/getstream?id=ddd",
+            stream_stats=_hd(480),
+        ),
+    )
+
+    ids, reasons, unmatched = _stream_ids(_prefer_member(["ddd", "bbb"]))
+
+    # Preferred low-quality feeds first, in manifest order; the rest by quality.
+    assert ids == [4, 2, 3, 1]
+    assert reasons[:2] == ["preferred #1", "preferred #2"]
+    assert unmatched == []
+
+
+def test_prefer_streams_matches_stream_hash_exactly() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="DAZN 1", url="http://x/1", stream_hash="h1"),
+        _StreamStub(pk=2, name="DAZN 1", url="http://x/2", stream_hash="h2"),
+    )
+
+    ids, _, _ = _stream_ids(_prefer_member(["h2"], quality=False))
+
+    assert ids == [2, 1]
+
+
+def test_prefer_streams_reports_entries_that_match_nothing() -> None:
+    _set_streams(_StreamStub(pk=1, name="DAZN 1", url="http://x/ace/getstream?id=aaa"))
+
+    ids, _, unmatched = _stream_ids(_prefer_member(["zzz", "aaa"], quality=False))
+
+    assert ids == [1]
+    assert unmatched == ["zzz"]
+
+
+def test_without_prefer_streams_order_is_unchanged() -> None:
+    _set_streams(
+        _StreamStub(pk=1, name="DAZN 1", stream_stats=_hd(720)),
+        _StreamStub(pk=2, name="DAZN 1", stream_stats=_hd(1080)),
+    )
+
+    ids, _, unmatched = _stream_ids(_prefer_member([]))
+
+    assert ids == [2, 1]
+    assert unmatched == []

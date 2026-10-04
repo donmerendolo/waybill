@@ -74,6 +74,9 @@ class MemberPipeline:
         )
         if self._effective_order_streams_by is OrderStreamsBy.QUALITY:
             self._required_fields.add("stream_stats")
+        self._prefer_streams: list[str] = member.prefer_streams
+        if self._prefer_streams:
+            self._required_fields |= {"stream_hash", "url"}
         self._matcher_descs: list[str] = [m.describe() for m in self._matchers]
         self._transformer_descs: list[str] = [t.describe() for t in self._transformers]
 
@@ -203,6 +206,7 @@ class MemberPipeline:
         via an iterator to avoid loading the full queryset into memory.
         Each transformer step is recorded for verbose plan output.
         """
+        matched_preferences: set[int] = set()
         q_filter = build_q_filter(self._member.matchers)
         qs = (
             Stream.objects.filter(q_filter)
@@ -291,6 +295,9 @@ class MemberPipeline:
 
             if not was_dropped:
                 stream_stats = getattr(stream, "stream_stats", None)
+                preference = self._preference_rank(stream)
+                if preference is not None:
+                    matched_preferences.add(preference)
                 groups[working.name].append(
                     (
                         stream_stats,
@@ -302,6 +309,7 @@ class MemberPipeline:
                             # overrides of tvg_id and logo_url reach the channel.
                             tvg_id=working.tvg_id,
                             logo_url=working.logo_url,
+                            preference=preference,
                             captures=declared_vars,
                             steps=steps,
                             variable_events=var_events,
@@ -362,7 +370,23 @@ class MemberPipeline:
             member_plan,
             validator_descs=self._validator_descs,
             violations=all_violations,
+            unmatched_preferences=[
+                entry
+                for i, entry in enumerate(self._prefer_streams)
+                if i not in matched_preferences
+            ],
         )
+
+    def _preference_rank(self, stream: "Stream") -> "int | None":
+        """Index of the first preferStreams entry that is this stream's hash or part of its URL."""
+        if not self._prefer_streams:
+            return None
+        stream_hash = getattr(stream, "stream_hash", None) or ""
+        url = getattr(stream, "url", None) or ""
+        for i, entry in enumerate(self._prefer_streams):
+            if entry == stream_hash or entry in url:
+                return i
+        return None
 
 
 class GroupPipeline:

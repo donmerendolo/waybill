@@ -227,6 +227,13 @@
             "null"
           ],
           "description": "Pins this member's first channel to this number; numbering of following channels continues from it. Use on every member for numbers that never shift"
+        },
+        "preferStreams": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Streams to put first, in this order, before any orderStreamsBy sorting. Each entry matches a stream whose stream hash equals it or whose URL contains it (e.g. an AceStream id). Entries that match nothing are reported in the plan"
         }
       },
       "required": [

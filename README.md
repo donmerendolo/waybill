@@ -109,6 +109,21 @@ members:
     ...
 ```
 
+### Preferring specific streams
+
+Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. List the feeds you trust in `preferStreams` and they go first, in the order you list them; the remaining streams follow, sorted by `orderStreamsBy` if set. Each entry matches a stream whose Dispatcharr stream hash equals it, or whose URL contains it, so an AceStream id works:
+
+```yaml
+- name: DAZN 1
+  preferStreams:
+    - "41418924..."   # AceStream id of the feed to try first
+    - "d5b2c6b9..."   # then this one
+  matchers:
+    - ...
+```
+
+The plan marks these streams `preferred #1`, `preferred #2`, … and warns about any entry that matched none of the member's streams, so stale ids are easy to spot.
+
 ### Keeping channels without streams
 
 By default a member that matches no streams produces no channel. Set `keepEmptyChannels: true` on a profile to keep it instead: the channel (named after the member) stays in Dispatcharr, apply removes its streams and **disables** it in the profile, and its number, logo and EPG are left untouched. The next apply that finds matching streams again fills it in and re-enables it. The plan marks these channels as `no streams, kept disabled`.
@@ -533,7 +548,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.x – 1.8.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x – 1.9.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.
