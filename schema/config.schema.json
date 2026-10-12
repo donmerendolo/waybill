@@ -97,6 +97,13 @@
           ],
           "description": "Default stream ordering applied to every channel in this profile"
         },
+        "m3uOrder": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "M3U account names, most preferred first. Breaks ties between streams of equal streamPriorities before orderStreamsBy; unlisted accounts go last"
+        },
         "variables": {
           "type": "object",
           "additionalProperties": {
@@ -152,6 +159,13 @@
             }
           ],
           "description": "Stream ordering override for this group (overrides profile-level setting)"
+        },
+        "m3uOrder": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "m3uOrder override for this group; [] clears the profile's order"
         },
         "variables": {
           "type": "object",
@@ -214,6 +228,13 @@
             }
           ],
           "description": "Stream ordering override for this member's channels (overrides group- and profile-level settings)"
+        },
+        "m3uOrder": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "m3uOrder override for this member; [] clears the inherited order"
         },
         "variables": {
           "type": "object",

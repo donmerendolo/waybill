@@ -355,6 +355,22 @@ def _to_priorities(raw: Any, where: str) -> dict[str, int]:
     return priorities
 
 
+def _to_m3u_order(raw: Any, where: str) -> "list[str] | None":
+    """Coerce m3uOrder: a list of M3U account names. Absent means inherit."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise ValueError(f"{where} m3uOrder must be a list of M3U account names")
+    names: list[str] = []
+    for item in cast(list[Any], raw):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(
+                f"{where} m3uOrder entries must be non-empty strings, got {item!r}"
+            )
+        names.append(item.strip())
+    return names
+
+
 def _to_bool(raw: Any, where: str, key: str) -> bool:
     """Coerce a YAML boolean setting; absent means False."""
     if raw is None:
@@ -381,6 +397,8 @@ class ConfigMember:
     validators: list[ConfigValidator] = field(default_factory=_empty_validators)
     stream_profile: str | None = None
     order_streams_by: OrderStreamsBy | None = None
+    # None inherits from the enclosing scope; [] clears an inherited order.
+    m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     channel_number: int | None = None
     stream_priorities: dict[str, int] = field(default_factory=_empty_str_int_dict)
@@ -483,6 +501,8 @@ class ConfigGroup:
     members: list[ConfigMember] = field(default_factory=_empty_members)
     stream_profile: str | None = None
     order_streams_by: OrderStreamsBy | None = None
+    # None inherits from the enclosing scope; [] clears an inherited order.
+    m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
 
     def __post_init__(self):
@@ -536,6 +556,7 @@ class ConfigGroup:
             validators=validators,
             stream_profile=item.get("streamProfile") or None,
             order_streams_by=_to_order_streams_by(item.get("orderStreamsBy")),
+            m3u_order=_to_m3u_order(item.get("m3uOrder"), f"{item.get('name', '')!r}"),
             variables=variables,
             channel_number=_to_channel_number(
                 item.get("channelNumber"),
@@ -555,6 +576,8 @@ class ConfigProfile:
     groups: dict[str, ConfigGroup] = field(default_factory=_empty_str_group_dict)
     stream_profile: str | None = None
     order_streams_by: OrderStreamsBy | None = None
+    # None inherits from the enclosing scope; [] clears an inherited order.
+    m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     start_channel_number: int | None = None
     keep_empty_channels: bool = False
@@ -594,6 +617,7 @@ class ConfigProfile:
             members=members,
             stream_profile=item.get("streamProfile") or None,
             order_streams_by=_to_order_streams_by(item.get("orderStreamsBy")),
+            m3u_order=_to_m3u_order(item.get("m3uOrder"), f"{item.get('name', '')!r}"),
             variables=variables,
         )
 
@@ -636,6 +660,7 @@ class ConfigSpec:
             groups=groups,
             stream_profile=item.get("streamProfile") or None,
             order_streams_by=_to_order_streams_by(item.get("orderStreamsBy")),
+            m3u_order=_to_m3u_order(item.get("m3uOrder"), f"{item.get('name', '')!r}"),
             variables=variables,
             start_channel_number=_to_channel_number(
                 item.get("startChannelNumber"),

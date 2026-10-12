@@ -542,9 +542,16 @@ def test_priority_key_never_adds_a_stream_to_a_channel() -> None:
 def test_unfiltered_members_share_one_full_stream_load(monkeypatch) -> None:
     from src.types.config import WaybillConfig
 
-    # Behave like django.db.models.Q: an empty Q means "no restriction".
+    # Behave like django.db.models.Q: an empty Q means "no restriction", and
+    # combining Qs keeps every condition (case-insensitive exactMatch ORs onto Q()).
     monkeypatch.setattr(_Q, "__bool__", lambda self: bool(self.kwargs), raising=False)
     monkeypatch.setattr(_Q, "__invert__", lambda self: self, raising=False)
+    monkeypatch.setattr(
+        _Q, "__or__", lambda self, other: _Q(**self.kwargs, **other.kwargs)
+    )
+    monkeypatch.setattr(
+        _Q, "__and__", lambda self, other: _Q(**self.kwargs, **other.kwargs)
+    )
 
     calls: list[object] = []
 
@@ -612,3 +619,149 @@ def test_unfiltered_members_share_one_full_stream_load(monkeypatch) -> None:
     # One shared load for both unfiltered members, plus the filtered member's
     # own database query.
     assert [bool(q) for q in calls] == [False, True]
+
+
+class _AccountManager:
+    def __init__(self, rows: "list[tuple[int, str]]") -> None:
+        self._rows = rows
+
+    def values_list(self, *fields: str) -> "list[tuple[int, str]]":
+        assert fields == ("id", "name")
+        return list(self._rows)
+
+
+def _install_accounts(monkeypatch, rows: "list[tuple[int, str]]") -> None:
+    m3u_models = types.ModuleType("apps.m3u.models")
+    m3u_models.M3UAccount = SimpleNamespace(objects=_AccountManager(rows))  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "apps.m3u", types.ModuleType("apps.m3u"))
+    monkeypatch.setitem(sys.modules, "apps.m3u.models", m3u_models)
+
+
+_ACCOUNTS = [(1, "ipfs"), (2, "vacaionesenelmar.xo.je")]
+
+
+def _acct(pk: int, account_id: int, height: int, ace: str = "") -> _StreamStub:
+    s = _StreamStub(
+        pk=pk,
+        name="DAZN 1",
+        url=f"http://x/ace/getstream?id={ace or pk}",
+        stream_stats=_hd(height),
+    )
+    s.m3u_account_id = account_id  # type: ignore[attr-defined]
+    return s
+
+
+def _m3u_plan(
+    profile_extra: dict,
+    member_extra: "dict | None" = None,
+    group_extra: "dict | None" = None,
+):
+    from src.types.config import WaybillConfig
+
+    member = {
+        "name": "DAZN 1",
+        "matchers": [{"type": "exactMatch", "values": ["DAZN 1"]}],
+        **(member_extra or {}),
+    }
+    config = WaybillConfig(
+        kind="WaybillConfig",
+        version="v1alpha1",
+        metadata={"name": "m3u"},
+        spec={
+            "profiles": {
+                "p": {
+                    "orderStreamsBy": "quality",
+                    **profile_extra,
+                    "groups": {
+                        "g": {"name": "G", **(group_extra or {}), "members": [member]}
+                    },
+                }
+            }
+        },
+    )
+    return pipeline_module.WaybillPipeline(config).compute_plan()
+
+
+def _order(plan) -> "list[int]":
+    return [s.id for s in plan.profiles[0].groups[0].members[0].channels[0].streams]
+
+
+def test_m3u_order_breaks_ties_between_equal_priorities(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _set_streams(
+        _acct(1, account_id=2, height=2160),  # vacaiones, 4K
+        _acct(2, account_id=1, height=720),  # ipfs, 720p
+        _acct(3, account_id=1, height=1080),  # ipfs, 1080p
+        _acct(4, account_id=2, height=480, ace="trusted"),  # vacaiones, prioritised
+    )
+
+    plan = _m3u_plan(
+        {"m3uOrder": ["ipfs", "vacaionesenelmar.xo.je"]},
+        {"streamPriorities": {"trusted": 5}},
+    )
+
+    # Priority first; then ipfs before vacaiones; quality only within an account.
+    assert _order(plan) == [4, 3, 2, 1]
+    streams = plan.profiles[0].groups[0].members[0].channels[0].streams
+    assert streams[1].order_reason == "m3u: ipfs, quality: 1080p, 1000kbps"
+    assert plan.warnings == []
+
+
+def test_m3u_order_is_case_insensitive_and_unlisted_accounts_go_last(
+    monkeypatch,
+) -> None:
+    _install_accounts(monkeypatch, [*_ACCOUNTS, (3, "other")])
+    _set_streams(
+        _acct(1, account_id=3, height=2160),  # unlisted account
+        _acct(2, account_id=2, height=720),
+    )
+
+    plan = _m3u_plan({"m3uOrder": ["VACAIONESENELMAR.XO.JE"]})
+
+    assert _order(plan) == [2, 1]
+
+
+def test_m3u_order_inherits_and_can_be_overridden_or_cleared(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    streams = [_acct(1, account_id=1, height=720), _acct(2, account_id=2, height=1080)]
+
+    _set_streams(*streams)
+    assert _order(_m3u_plan({"m3uOrder": ["ipfs"]})) == [1, 2]
+
+    _set_streams(*streams)
+    group_override = _m3u_plan(
+        {"m3uOrder": ["ipfs"]}, group_extra={"m3uOrder": ["vacaionesenelmar.xo.je"]}
+    )
+    assert _order(group_override) == [2, 1]
+
+    _set_streams(*streams)
+    cleared = _m3u_plan({"m3uOrder": ["ipfs"]}, member_extra={"m3uOrder": []})
+    assert _order(cleared) == [2, 1]  # quality only
+
+
+def test_unknown_m3u_names_are_reported_once(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _set_streams(_acct(1, account_id=1, height=720))
+
+    plan = _m3u_plan(
+        {"m3uOrder": ["ipfs", "typo-account"]},
+        member_extra={"m3uOrder": ["Typo-Account"]},
+    )
+
+    assert plan.warnings == ['m3uOrder entry matches no M3U account: "typo-account"']
+
+
+def test_without_m3u_order_accounts_are_never_loaded(monkeypatch) -> None:
+    class Exploding:
+        def values_list(self, *fields: str):
+            raise AssertionError("M3U accounts should not be queried")
+
+    m3u_models = types.ModuleType("apps.m3u.models")
+    m3u_models.M3UAccount = SimpleNamespace(objects=Exploding())  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "apps.m3u.models", m3u_models)
+    _set_streams(_acct(1, account_id=1, height=720))
+
+    plan = _m3u_plan({})
+
+    assert _order(plan) == [1]
+    assert plan.warnings == []

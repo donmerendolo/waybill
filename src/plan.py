@@ -104,17 +104,21 @@ def _assemble_channel_plan(
 ) -> ChannelPlan:
     # Higher streamPriorities first; quality (when enabled) only orders streams of
     # equal priority. Python's sort is stable, so remaining ties keep pipeline order.
-    keyed: list[tuple[StreamRecord, tuple[int, int, float]]] = []
+    # Then the M3U account's place in m3uOrder (earlier first), then quality.
+    keyed: list[tuple[StreamRecord, tuple[int, int, int, float]]] = []
     for stats, r in entries:
-        quality = _quality_key(stats) if needs_quality else (0, 0.0)
+        height, bitrate = _quality_key(stats) if needs_quality else (0, 0.0)
         reasons = []
         if r.priority:
             reasons.append(f"priority {r.priority}")
+        if r.m3u_account is not None:
+            reasons.append(f"m3u: {r.m3u_account}")
         if needs_quality:
             reasons.append(_quality_order_reason(stats))
         reason = ", ".join(reasons) or None
-        keyed.append((replace(r, order_reason=reason), (r.priority, *quality)))
-    streams = [r for r, _ in sorted(keyed, key=lambda e: e[1], reverse=True)]
+        sort_key = (-r.priority, r.m3u_rank, -height, -bitrate)
+        keyed.append((replace(r, order_reason=reason), sort_key))
+    streams = [r for r, _ in sorted(keyed, key=lambda e: e[1])]
     return ChannelPlan(
         name=name,
         epg_id=_most_common(r.tvg_id for r in streams),
@@ -131,6 +135,8 @@ class WaybillPlanFormatter:
     def format(self, plan: WaybillPlan) -> list[str]:
         lines: list[str] = []
         lines.append(f"=== Waybill Plan: {plan.manifest_name} ===")
+        for warning in plan.warnings:
+            lines.append(f"[WARN] {warning}")
 
         total_channels = 0
         for profile in plan.profiles:

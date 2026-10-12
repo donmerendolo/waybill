@@ -63,6 +63,30 @@ class AllStreams:
         return self._streams
 
 
+class AccountNames:
+    """M3U account id -> name, loaded once per plan when an m3uOrder is used."""
+
+    def __init__(self) -> None:
+        self._names: "dict[int, str] | None" = None
+
+    def _load(self) -> "dict[int, str]":
+        if self._names is None:
+            from apps.m3u.models import M3UAccount
+
+            self._names = dict(M3UAccount.objects.values_list("id", "name"))
+        return self._names
+
+    def name(self, account_id: "int | None") -> "str | None":
+        if account_id is None:
+            return None
+        return self._load().get(account_id)
+
+    def unknown(self, names: "list[str]") -> "list[str]":
+        """Names (in the given order) that match no M3U account, ignoring case."""
+        known = {n.casefold() for n in self._load().values()}
+        return [n for n in names if n.casefold() not in known]
+
+
 class MemberPipeline:
     """Encapsulates matcher and transformer instances for a single ConfigMember."""
 
@@ -72,8 +96,15 @@ class MemberPipeline:
         inherited_stream_profile: "str | None" = None,
         inherited_order_streams_by: "OrderStreamsBy | None" = None,
         inherited_variables: "dict[str, ConfigVariable] | None" = None,
+        inherited_m3u_order: "list[str] | None" = None,
     ) -> None:
         self._member = member
+        self._m3u_order: list[str] = (
+            member.m3u_order if member.m3u_order is not None else inherited_m3u_order
+        ) or []
+        self._m3u_rank: dict[str, int] = {}
+        for i, account in enumerate(self._m3u_order):
+            self._m3u_rank.setdefault(account.casefold(), i)
         self._effective_stream_profile: str | None = (
             member.stream_profile or inherited_stream_profile
         )
@@ -97,6 +128,8 @@ class MemberPipeline:
         )
         if self._effective_order_streams_by is OrderStreamsBy.QUALITY:
             self._required_fields.add("stream_stats")
+        if self._m3u_order:
+            self._required_fields.add("m3u_account")
         self._stream_priorities: dict[str, int] = member.stream_priorities
         if self._stream_priorities:
             self._required_fields |= {"stream_hash", "url"}
@@ -224,6 +257,7 @@ class MemberPipeline:
         self,
         chunk_size: int = CHUNK_SIZE,
         all_streams: "AllStreams | None" = None,
+        accounts: "AccountNames | None" = None,
     ) -> MemberPlan:
         """
         Query, match, and transform streams for this member.
@@ -328,6 +362,7 @@ class MemberPipeline:
 
             if not was_dropped:
                 stream_stats = getattr(stream, "stream_stats", None)
+                m3u_account, m3u_rank = self._m3u_position(stream, accounts)
                 priority_key = self._priority_key(stream)
                 if priority_key is not None:
                     matched_priority_keys.add(priority_key)
@@ -347,6 +382,8 @@ class MemberPipeline:
                                 if priority_key is not None
                                 else 0
                             ),
+                            m3u_account=m3u_account,
+                            m3u_rank=m3u_rank,
                             captures=declared_vars,
                             steps=steps,
                             variable_events=var_events,
@@ -414,6 +451,18 @@ class MemberPipeline:
             ],
         )
 
+    def _m3u_position(
+        self, stream: "Stream", accounts: "AccountNames | None"
+    ) -> "tuple[str | None, int]":
+        """(account name, rank in m3uOrder) for this stream; (None, 0) without an order."""
+        if not self._m3u_order:
+            return None, 0
+        account_id = getattr(stream, "m3u_account_id", None)
+        name = (accounts or AccountNames()).name(account_id) if account_id else None
+        unlisted = len(self._m3u_order)
+        rank = self._m3u_rank.get(name.casefold(), unlisted) if name else unlisted
+        return name or "?", rank
+
     def _priority_key(self, stream: "Stream") -> "str | None":
         """First streamPriorities key (in manifest order) matching this stream.
 
@@ -446,6 +495,8 @@ class GroupPipeline:
         group_order_streams_by: "OrderStreamsBy | None" = None,
         inherited_variables: "dict[str, ConfigVariable] | None" = None,
         group_variables: "dict[str, ConfigVariable] | None" = None,
+        inherited_m3u_order: "list[str] | None" = None,
+        group_m3u_order: "list[str] | None" = None,
     ) -> None:
         self._key = key
         self._name = name
@@ -462,6 +513,11 @@ class GroupPipeline:
                 inherited_stream_profile=effective_sp,
                 inherited_order_streams_by=effective_osb,
                 inherited_variables=effective_variables,
+                inherited_m3u_order=(
+                    group_m3u_order
+                    if group_m3u_order is not None
+                    else inherited_m3u_order
+                ),
             )
             for m in members
         ]
@@ -470,12 +526,15 @@ class GroupPipeline:
         self,
         chunk_size: int = CHUNK_SIZE,
         all_streams: "AllStreams | None" = None,
+        accounts: "AccountNames | None" = None,
     ) -> GroupPlan:
         return GroupPlan(
             key=self._key,
             name=self._name,
             members=[
-                p.process(chunk_size=chunk_size, all_streams=all_streams)
+                p.process(
+                    chunk_size=chunk_size, all_streams=all_streams, accounts=accounts
+                )
                 for p in self._pipelines
             ],
         )
@@ -499,6 +558,8 @@ class ProfilePipeline:
                 group_order_streams_by=cat.order_streams_by,
                 inherited_variables=profile.variables,
                 group_variables=cat.variables,
+                inherited_m3u_order=profile.m3u_order,
+                group_m3u_order=cat.m3u_order,
             )
             for cat_key, cat in profile.groups.items()
         ]
@@ -507,9 +568,10 @@ class ProfilePipeline:
         self,
         chunk_size: int = CHUNK_SIZE,
         all_streams: "AllStreams | None" = None,
+        accounts: "AccountNames | None" = None,
     ) -> ProfilePlan:
         groups = [
-            c.process(chunk_size=chunk_size, all_streams=all_streams)
+            c.process(chunk_size=chunk_size, all_streams=all_streams, accounts=accounts)
             for c in self._pipelines
         ]
         groups = _finalise_channels(groups, self._profile)
@@ -558,10 +620,32 @@ class WaybillPipeline:
 
     def compute_plan(self, chunk_size: int = CHUNK_SIZE) -> WaybillPlan:
         all_streams = AllStreams(chunk_size=chunk_size)
+        accounts = AccountNames()
+        profiles = [
+            p.process(chunk_size=chunk_size, all_streams=all_streams, accounts=accounts)
+            for p in self._profiles
+        ]
+        warnings = [
+            f'm3uOrder entry matches no M3U account: "{name}"'
+            for name in self._unknown_m3u_names(accounts)
+        ]
         return WaybillPlan(
             manifest_name=self._config.metadata.name,
-            profiles=[
-                p.process(chunk_size=chunk_size, all_streams=all_streams)
-                for p in self._profiles
-            ],
+            profiles=profiles,
+            warnings=warnings,
         )
+
+    def _unknown_m3u_names(self, accounts: AccountNames) -> list[str]:
+        """Every distinct m3uOrder name in the manifest that no M3U account has."""
+        names: dict[str, str] = {}
+        for profile in self._config.spec.profiles.values():
+            orders = [profile.m3u_order]
+            for group in profile.groups.values():
+                orders.append(group.m3u_order)
+                orders.extend(member.m3u_order for member in group.members)
+            for order in orders:
+                for name in order or []:
+                    names.setdefault(name.casefold(), name)
+        if not names:
+            return []
+        return accounts.unknown(list(names.values()))
