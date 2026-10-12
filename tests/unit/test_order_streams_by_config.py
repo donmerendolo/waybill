@@ -131,3 +131,43 @@ def test_member_re_enables_when_group_cleared() -> None:
         cfg.spec.profiles["p"].groups["g"].members[0].order_streams_by
         is OrderStreamsBy.QUALITY
     )
+
+
+# ---------------------------------------------------------------------------
+# List form: an explicit, ordered set of sort criteria
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("scope", ["profile", "group", "member"])
+def test_order_streams_by_list_at_every_scope(scope: str) -> None:
+    kwargs = {f"{scope}_osb": ["priority", "quality", "m3u"]}
+    cfg = _make_config(_profile_dict(**kwargs))
+
+    assert _at_scope(cfg, scope).order_streams_by == [
+        OrderStreamsBy.PRIORITY,
+        OrderStreamsBy.QUALITY,
+        OrderStreamsBy.M3U,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ([], "at least one criterion"),
+        (["quality", "quality"], "criterion twice"),
+        (["quality", "speed"], "speed"),
+    ],
+)
+def test_order_streams_by_list_rejects_invalid(value: object, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _make_config(_profile_dict(profile_osb=value))
+
+
+def test_stream_sort_criteria_resolution() -> None:
+    from src.types.config import stream_sort_criteria
+
+    p, m, q = OrderStreamsBy.PRIORITY, OrderStreamsBy.M3U, OrderStreamsBy.QUALITY
+    assert stream_sort_criteria(None) == (p, m)
+    assert stream_sort_criteria(q) == (p, m, q)  # legacy meaning of "quality"
+    assert stream_sort_criteria(p) == (p,)
+    assert stream_sort_criteria([q, m]) == (q, m)  # a list states everything

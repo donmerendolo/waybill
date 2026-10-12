@@ -124,7 +124,7 @@ class ChannelPlan:
     epg_id: str | None = None
     logo_url: str | None = None
     stream_profile: str | None = None
-    order_streams_by: OrderStreamsBy | None = None
+    order_streams_by: OrderStreamsBy | list[OrderStreamsBy] | None = None
     streams: list[StreamRecord] = field(default_factory=_empty_stream_records)
     # Set when the profile declares startChannelNumber or the member declares
     # channelNumber; None leaves numbering to Dispatcharr.

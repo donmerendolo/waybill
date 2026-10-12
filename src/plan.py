@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import replace
 from typing import Iterable
 
-from .types.config import OrderStreamsBy
+from .types.config import OrderStreamsBy, stream_sort_criteria
 from .types.plan import (
     ChannelPlan,
     DroppedRecord,
@@ -69,10 +69,10 @@ def assemble_member_plan(
     raw_groups: "dict[str, list[tuple[dict | None, StreamRecord]]]",
     dropped: "list[DroppedRecord]",
     effective_stream_profile: "str | None",
-    effective_order_streams_by: "OrderStreamsBy | None",
+    effective_order_streams_by: "OrderStreamsBy | list[OrderStreamsBy] | None",
 ) -> MemberPlan:
     """Assemble a MemberPlan from raw per-channel groups produced by the pipeline."""
-    needs_quality = effective_order_streams_by is OrderStreamsBy.QUALITY
+    criteria = stream_sort_criteria(effective_order_streams_by)
     channels = sorted(
         (
             _assemble_channel_plan(
@@ -80,7 +80,7 @@ def assemble_member_plan(
                 entries,
                 effective_stream_profile,
                 effective_order_streams_by,
-                needs_quality,
+                criteria,
             )
             for name, entries in raw_groups.items()
         ),
@@ -99,25 +99,31 @@ def _assemble_channel_plan(
     name: str,
     entries: "list[tuple[dict | None, StreamRecord]]",
     effective_stream_profile: "str | None",
-    effective_order_streams_by: "OrderStreamsBy | None",
-    needs_quality: bool,
+    effective_order_streams_by: "OrderStreamsBy | list[OrderStreamsBy] | None",
+    criteria: "tuple[OrderStreamsBy, ...]",
 ) -> ChannelPlan:
-    # Higher streamPriorities first; quality (when enabled) only orders streams of
-    # equal priority. Python's sort is stable, so remaining ties keep pipeline order.
-    # Then the M3U account's place in m3uOrder (earlier first), then quality.
-    keyed: list[tuple[StreamRecord, tuple[int, int, int, float]]] = []
+    # Sort by the criteria in the order orderStreamsBy lists them: higher
+    # streamPriorities, earlier m3uOrder account, higher quality. Python's sort is
+    # stable, so remaining ties keep pipeline order.
+    keyed: list[tuple[StreamRecord, tuple[float, ...]]] = []
     for stats, r in entries:
-        height, bitrate = _quality_key(stats) if needs_quality else (0, 0.0)
-        reasons = []
-        if r.priority:
-            reasons.append(f"priority {r.priority}")
-        if r.m3u_account is not None:
-            reasons.append(f"m3u: {r.m3u_account}")
-        if needs_quality:
-            reasons.append(_quality_order_reason(stats))
+        key: list[float] = []
+        reasons: list[str] = []
+        for criterion in criteria:
+            if criterion is OrderStreamsBy.PRIORITY:
+                key.append(-r.priority)
+                if r.priority:
+                    reasons.append(f"priority {r.priority}")
+            elif criterion is OrderStreamsBy.M3U:
+                key.append(r.m3u_rank)
+                if r.m3u_account is not None:
+                    reasons.append(f"m3u: {r.m3u_account}")
+            elif criterion is OrderStreamsBy.QUALITY:
+                height, bitrate = _quality_key(stats)
+                key.extend((-height, -bitrate))
+                reasons.append(_quality_order_reason(stats))
         reason = ", ".join(reasons) or None
-        sort_key = (-r.priority, r.m3u_rank, -height, -bitrate)
-        keyed.append((replace(r, order_reason=reason), sort_key))
+        keyed.append((replace(r, order_reason=reason), tuple(key)))
     streams = [r for r, _ in sorted(keyed, key=lambda e: e[1])]
     return ChannelPlan(
         name=name,
@@ -173,9 +179,13 @@ class WaybillPlanFormatter:
                                 f"        Stream Profile: {channel.stream_profile}"
                             )
                         if channel.order_streams_by:
-                            lines.append(
-                                f"        Order Streams By: {channel.order_streams_by.value}"
+                            order = channel.order_streams_by
+                            shown = (
+                                order.value
+                                if isinstance(order, OrderStreamsBy)
+                                else ", ".join(c.value for c in order)
                             )
+                            lines.append(f"        Order Streams By: {shown}")
                         for stream in channel.streams:
                             if stream.original_name != stream.transformed_name:
                                 suffix = (

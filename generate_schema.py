@@ -116,7 +116,11 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "Default stream profile applied to every channel in this profile"
     ),
     (ConfigProfile, "order_streams_by"): (
-        "Default stream ordering applied to every channel in this profile"
+        "Default stream ordering applied to every channel in this profile: an ordered "
+        "list of criteria (priority = streamPriorities, m3u = m3uOrder, quality = "
+        "resolution then bitrate), e.g. [priority, quality, m3u]. Criteria not listed "
+        "are not used. The single value 'quality' means [priority, m3u, quality]; "
+        "absent means [priority, m3u]"
     ),
     (ConfigProfile, "groups"): "Map of group key \u2192 ConfigGroup",
     (ConfigProfile, "keep_empty_channels"): (
@@ -125,8 +129,8 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "leaves its number, logo and EPG untouched, re-enabling it once streams match"
     ),
     (ConfigProfile, "m3u_order"): (
-        "M3U account names, most preferred first. Breaks ties between streams of "
-        "equal streamPriorities before orderStreamsBy; unlisted accounts go last"
+        "M3U account names, most preferred first; unlisted accounts go last. Used "
+        "where orderStreamsBy includes 'm3u' (it does by default)"
     ),
     (ConfigGroup, "m3u_order"): (
         "m3uOrder override for this group; [] clears the profile's order"
@@ -309,7 +313,10 @@ def _py_type_to_schema(py_type: Any) -> dict[str, Any]:
                 values.extend(_enum_values(et))
             return {"type": "string", "enum": values}
 
-        return {"oneOf": [_py_type_to_schema(a) for a in non_none]}
+        options = [_py_type_to_schema(a) for a in non_none]
+        if has_none:
+            options.append({"type": "null"})
+        return {"oneOf": options}
 
     # list[X]
     if origin is list:
@@ -402,6 +409,28 @@ def _dataclass_to_schema(cls: type) -> dict[str, Any]:
 
 def build_schema() -> dict[str, Any]:
     defs = {cls.__name__: _dataclass_to_schema(cls) for cls in EXPORT_CLASSES}
+    # Referenced by every `variables` map. Hand-written because YAML accepts both
+    # the full form and a bare scalar shorthand (see _to_variable_dict).
+    defs["ConfigVariable"] = {
+        "description": (
+            "A predefined variable: {value, mutable} or a bare scalar shorthand "
+            "for {value: <scalar>, mutable: true}"
+        ),
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "string", "description": "Variable value"},
+                    "mutable": {
+                        "type": "boolean",
+                        "description": "Whether capture groups may override it",
+                    },
+                },
+                "additionalProperties": False,
+            },
+            {"type": ["string", "number", "boolean"]},
+        ],
+    }
 
     # Promote the root class to the top level and attach $defs.
     root = defs.pop("WaybillConfig")
