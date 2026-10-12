@@ -129,6 +129,20 @@ Matchers and priorities use different identifiers on purpose. Use names in match
 
 Priorities only order the streams a member's matchers already selected: a key never adds a stream to a channel. The plan shows each stream's priority next to it.
 
+### Preferring M3U accounts
+
+When you have the same channels from several M3U accounts, `m3uOrder` decides which account's feeds go first among streams of the **same priority**. Streams are ordered by `streamPriorities` first, then by `m3uOrder`, then by `orderStreamsBy` (e.g. quality):
+
+```yaml
+spec:
+  profiles:
+    todo:
+      orderStreamsBy: quality
+      m3uOrder: ["ipfs", "vacaionesenelmar.xo.je"]   # most preferred first
+```
+
+Names are Dispatcharr's M3U account names (case is ignored); accounts not listed go after every listed one. Set it on a profile, and override it on a group or member; `m3uOrder: []` clears an inherited order. The plan shows each stream's account (`m3u: ipfs`) and warns about any name that matches no M3U account.
+
 ### Keeping channels without streams
 
 By default a member that matches no streams produces no channel. Set `keepEmptyChannels: true` on a profile to keep it instead: the channel (named after the member) stays in Dispatcharr, apply removes its streams and **disables** it in the profile, and its number, logo and EPG are left untouched. The next apply that finds matching streams again fills it in and re-enables it. The plan marks these channels as `no streams, kept disabled`.
@@ -553,7 +567,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.x – 1.9.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x – 1.10.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.

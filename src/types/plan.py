@@ -107,6 +107,10 @@ class StreamRecord:
     order_reason: str | None = None
     # From the member's streamPriorities; higher sorts first, unlisted streams are 0.
     priority: int = 0
+    # Set when an m3uOrder applies: the stream's M3U account name and its position
+    # in that order (unlisted accounts sort after every listed one).
+    m3u_account: str | None = None
+    m3u_rank: int = 0
     captures: dict[str, str] = field(default_factory=_empty_captures_dict)
     steps: list[TransformStep] = field(default_factory=_empty_transform_steps)
     variable_events: list[VariableEvent] = field(default_factory=_empty_variable_events)
@@ -169,6 +173,8 @@ class ProfilePlan:
 class WaybillPlan:
     manifest_name: str
     profiles: list[ProfilePlan] = field(default_factory=_empty_profile_plans)
+    # Plan-wide warnings, e.g. m3uOrder names that match no M3U account.
+    warnings: list[str] = field(default_factory=_empty_str_list)
 
     def has_failures(self) -> bool:
         """Return True if any violation across all members has action == 'fail'."""

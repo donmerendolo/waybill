@@ -57,6 +57,9 @@ YAML_KEY: dict[tuple[type, str], str] = {
     (ConfigProfile, "keep_empty_channels"): "keepEmptyChannels",
     (ConfigMember, "channel_number"): "channelNumber",
     (ConfigMember, "stream_priorities"): "streamPriorities",
+    (ConfigProfile, "m3u_order"): "m3uOrder",
+    (ConfigGroup, "m3u_order"): "m3uOrder",
+    (ConfigMember, "m3u_order"): "m3uOrder",
 }
 
 # Fields entirely omitted from the schema (internal implementation details).
@@ -120,6 +123,16 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "When true, a member that matches no streams still produces a channel (named "
         "after the member). Apply keeps it disabled in the profile with no streams and "
         "leaves its number, logo and EPG untouched, re-enabling it once streams match"
+    ),
+    (ConfigProfile, "m3u_order"): (
+        "M3U account names, most preferred first. Breaks ties between streams of "
+        "equal streamPriorities before orderStreamsBy; unlisted accounts go last"
+    ),
+    (ConfigGroup, "m3u_order"): (
+        "m3uOrder override for this group; [] clears the profile's order"
+    ),
+    (ConfigMember, "m3u_order"): (
+        "m3uOrder override for this member; [] clears the inherited order"
     ),
     (ConfigMember, "stream_priorities"): (
         "Map of stream URL fragment (e.g. an AceStream id) or stream hash to integer "

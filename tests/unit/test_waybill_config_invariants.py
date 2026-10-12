@@ -185,3 +185,26 @@ def test_stream_priorities_parses_from_yaml() -> None:
 
     member = cfg.spec.profiles["p"].groups["g"].members[0]
     assert member.stream_priorities == {"d5b2c6b9": 10, "50a8a13c": -3}
+
+
+@pytest.mark.parametrize("value", ["ipfs", [""], ["ok", 3], {"a": 1}])
+def test_m3u_order_rejects_invalid_values(value: object) -> None:
+    payload = _valid_config_payload()
+    payload["spec"] = {"profiles": {"p": {"m3uOrder": value}}}
+
+    with pytest.raises(ValueError, match="m3uOrder"):
+        WaybillConfig(**payload)
+
+
+def test_m3u_order_parses_at_every_level() -> None:
+    payload = _member_payload({"name": "A", "m3uOrder": [" b "]})
+    payload["spec"]["profiles"]["p"]["m3uOrder"] = ["a"]  # type: ignore[index]
+    payload["spec"]["profiles"]["p"]["groups"]["g"]["m3uOrder"] = []  # type: ignore[index]
+
+    cfg = WaybillConfig(**payload)
+
+    profile = cfg.spec.profiles["p"]
+    assert profile.m3u_order == ["a"]
+    assert profile.groups["g"].m3u_order == []
+    assert profile.groups["g"].members[0].m3u_order == ["b"]
+    assert cfg.spec.profiles["p"].groups["g"].members[0].stream_priorities == {}
