@@ -111,7 +111,7 @@ members:
 
 ### Stream priorities
 
-Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. Give individual feeds an integer priority with `streamPriorities`. Every feed not listed has priority `0`. Streams are ordered by priority, highest first, and `orderStreamsBy` (e.g. quality) only orders streams that share the same priority. Give feeds you trust a positive number, and unreliable ones a negative number so they are only tried last:
+Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. Give individual feeds an integer priority with `streamPriorities`. Every feed not listed has priority `0`, and higher priorities go first. Where priority sits relative to quality and M3U account is set by `orderStreamsBy` (see [Stream order](#stream-order)); by default it comes first. Give feeds you trust a positive number, and unreliable ones a negative number so they are only tried last:
 
 ```yaml
 - name: DAZN F1
@@ -131,17 +131,32 @@ Priorities only order the streams a member's matchers already selected: a key ne
 
 ### Preferring M3U accounts
 
-When you have the same channels from several M3U accounts, `m3uOrder` decides which account's feeds go first among streams of the **same priority**. Streams are ordered by `streamPriorities` first, then by `m3uOrder`, then by `orderStreamsBy` (e.g. quality):
+When you have the same channels from several M3U accounts, `m3uOrder` ranks the accounts, most preferred first:
 
 ```yaml
 spec:
   profiles:
     todo:
-      orderStreamsBy: quality
-      m3uOrder: ["ipfs", "vacaionesenelmar.xo.je"]   # most preferred first
+      m3uOrder: ["ipfs", "vacaionesenelmar.xo.je"]
 ```
 
-Names are Dispatcharr's M3U account names (case is ignored); accounts not listed go after every listed one. Set it on a profile, and override it on a group or member; `m3uOrder: []` clears an inherited order. The plan shows each stream's account (`m3u: ipfs`) and warns about any name that matches no M3U account.
+Names are Dispatcharr's M3U account names (case is ignored); accounts not listed go after every listed one. Where the account ranks against priority and quality is set by `orderStreamsBy`. Set it on a profile, and override it on a group or member; `m3uOrder: []` clears an inherited order. The plan shows each stream's account (`m3u: ipfs`) and warns about any name that matches no M3U account.
+
+### Stream order
+
+`orderStreamsBy` states how a channel's streams are ordered, as a list of criteria applied in turn: each one only decides between streams that tie on the ones before it.
+
+| Criterion | Orders by |
+|---|---|
+| `priority` | `streamPriorities`, highest first |
+| `quality` | resolution, then bitrate, highest first (needs Dispatcharr stream stats) |
+| `m3u` | the stream's M3U account in `m3uOrder`, earliest first |
+
+```yaml
+orderStreamsBy: [priority, quality, m3u]   # trusted feeds, then best picture, then preferred account
+```
+
+Criteria you leave out are not used. Like `streamProfile`, it can be set on a profile and overridden on a group or member. For compatibility, the single value `orderStreamsBy: quality` means `[priority, m3u, quality]`, and leaving it out means `[priority, m3u]`. Remaining ties keep the order Dispatcharr returned the streams in.
 
 ### Keeping channels without streams
 
@@ -567,7 +582,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.x – 1.10.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x – 1.11.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.

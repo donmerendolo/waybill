@@ -22,6 +22,7 @@ from .types.config import (
     ConfigProfile,
     ConfigVariable,
     OrderStreamsBy,
+    stream_sort_criteria,
     WaybillConfig,
 )
 from .plan import assemble_member_plan
@@ -94,7 +95,7 @@ class MemberPipeline:
         self,
         member: ConfigMember,
         inherited_stream_profile: "str | None" = None,
-        inherited_order_streams_by: "OrderStreamsBy | None" = None,
+        inherited_order_streams_by: "OrderStreamsBy | list[OrderStreamsBy] | None" = None,
         inherited_variables: "dict[str, ConfigVariable] | None" = None,
         inherited_m3u_order: "list[str] | None" = None,
     ) -> None:
@@ -108,9 +109,9 @@ class MemberPipeline:
         self._effective_stream_profile: str | None = (
             member.stream_profile or inherited_stream_profile
         )
-        self._effective_order_streams_by: OrderStreamsBy | None = (
-            member.order_streams_by or inherited_order_streams_by
-        )
+        self._effective_order_streams_by: (
+            OrderStreamsBy | list[OrderStreamsBy] | None
+        ) = member.order_streams_by or inherited_order_streams_by
         # Outer scope variables; shadowed by member-level definitions.
         self._predefined_vars_config: dict[str, ConfigVariable] = {
             **(inherited_variables or {}),
@@ -126,7 +127,9 @@ class MemberPipeline:
             | {t.field for cfg in member.matchers for t in cfg.transformers}
             | {"id", "name", "tvg_id", "logo_url"}
         )
-        if self._effective_order_streams_by is OrderStreamsBy.QUALITY:
+        if OrderStreamsBy.QUALITY in stream_sort_criteria(
+            self._effective_order_streams_by
+        ):
             self._required_fields.add("stream_stats")
         if self._m3u_order:
             self._required_fields.add("m3u_account")
@@ -491,8 +494,8 @@ class GroupPipeline:
         members: list[ConfigMember],
         inherited_stream_profile: "str | None" = None,
         group_stream_profile: "str | None" = None,
-        inherited_order_streams_by: "OrderStreamsBy | None" = None,
-        group_order_streams_by: "OrderStreamsBy | None" = None,
+        inherited_order_streams_by: "OrderStreamsBy | list[OrderStreamsBy] | None" = None,
+        group_order_streams_by: "OrderStreamsBy | list[OrderStreamsBy] | None" = None,
         inherited_variables: "dict[str, ConfigVariable] | None" = None,
         group_variables: "dict[str, ConfigVariable] | None" = None,
         inherited_m3u_order: "list[str] | None" = None,

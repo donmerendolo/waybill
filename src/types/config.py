@@ -83,7 +83,29 @@ class CardinalOutputType(Enum):
 
 
 class OrderStreamsBy(Enum):
-    QUALITY = "quality"
+    """Stream sort criteria. orderStreamsBy takes one of these or an ordered list."""
+
+    PRIORITY = "priority"  # streamPriorities, highest first
+    M3U = "m3u"  # position of the stream's M3U account in m3uOrder
+    QUALITY = "quality"  # resolution, then bitrate, highest first
+
+
+# Criteria applied when orderStreamsBy is absent, or is the single value "quality".
+DEFAULT_STREAM_ORDER = (OrderStreamsBy.PRIORITY, OrderStreamsBy.M3U)
+LEGACY_QUALITY_ORDER = (*DEFAULT_STREAM_ORDER, OrderStreamsBy.QUALITY)
+
+
+def stream_sort_criteria(
+    order: "OrderStreamsBy | list[OrderStreamsBy] | None",
+) -> "tuple[OrderStreamsBy, ...]":
+    """Resolve an orderStreamsBy value to the criteria to sort by, in order."""
+    if order is None:
+        return DEFAULT_STREAM_ORDER
+    if order is OrderStreamsBy.QUALITY:
+        return LEGACY_QUALITY_ORDER
+    if isinstance(order, OrderStreamsBy):
+        return (order,)
+    return tuple(order)
 
 
 class ValidatorType(Enum):
@@ -380,12 +402,29 @@ def _to_bool(raw: Any, where: str, key: str) -> bool:
     return raw
 
 
-def _to_order_streams_by(raw: Any) -> "OrderStreamsBy | None":
-    """Coerce a raw YAML value to OrderStreamsBy, or None if absent."""
+def _to_order_streams_by(raw: Any) -> "OrderStreamsBy | list[OrderStreamsBy] | None":
+    """Coerce orderStreamsBy: a single criterion, an ordered list of them, or None.
+
+    The single value "quality" keeps its original meaning (priority, then M3U
+    account, then quality); a list states the exact order and omits nothing
+    implicitly.
+    """
     if raw is None or raw == "":
         return None
     if isinstance(raw, OrderStreamsBy):
         return raw
+    if isinstance(raw, list):
+        if not raw:
+            raise ValueError("orderStreamsBy list must name at least one criterion")
+        criteria = [
+            c if isinstance(c, OrderStreamsBy) else OrderStreamsBy(str(c))
+            for c in cast(list[Any], raw)
+        ]
+        if len(set(criteria)) != len(criteria):
+            raise ValueError(
+                f"orderStreamsBy lists a criterion twice: {[c.value for c in criteria]}"
+            )
+        return criteria
     return OrderStreamsBy(str(raw))
 
 
@@ -396,7 +435,7 @@ class ConfigMember:
     transformers: list[ConfigTransformer] = field(default_factory=_empty_transformers)
     validators: list[ConfigValidator] = field(default_factory=_empty_validators)
     stream_profile: str | None = None
-    order_streams_by: OrderStreamsBy | None = None
+    order_streams_by: OrderStreamsBy | list[OrderStreamsBy] | None = None
     # None inherits from the enclosing scope; [] clears an inherited order.
     m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
@@ -500,7 +539,7 @@ class ConfigGroup:
     name: str
     members: list[ConfigMember] = field(default_factory=_empty_members)
     stream_profile: str | None = None
-    order_streams_by: OrderStreamsBy | None = None
+    order_streams_by: OrderStreamsBy | list[OrderStreamsBy] | None = None
     # None inherits from the enclosing scope; [] clears an inherited order.
     m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
@@ -575,7 +614,7 @@ class ConfigProfile:
     name: str = ""
     groups: dict[str, ConfigGroup] = field(default_factory=_empty_str_group_dict)
     stream_profile: str | None = None
-    order_streams_by: OrderStreamsBy | None = None
+    order_streams_by: OrderStreamsBy | list[OrderStreamsBy] | None = None
     # None inherits from the enclosing scope; [] clears an inherited order.
     m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)

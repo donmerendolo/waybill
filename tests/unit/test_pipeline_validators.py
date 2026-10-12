@@ -765,3 +765,57 @@ def test_without_m3u_order_accounts_are_never_loaded(monkeypatch) -> None:
 
     assert _order(plan) == [1]
     assert plan.warnings == []
+
+
+def _four_accounts_streams() -> None:
+    _set_streams(
+        _acct(1, account_id=2, height=2160),  # vacaiones, 4K
+        _acct(2, account_id=1, height=720),  # ipfs, 720p
+        _acct(3, account_id=1, height=1080),  # ipfs, 1080p
+        _acct(4, account_id=2, height=480, ace="trusted"),  # vacaiones, prioritised
+    )
+
+
+def test_order_streams_by_list_puts_quality_before_m3u(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _four_accounts_streams()
+
+    plan = _m3u_plan(
+        {
+            "orderStreamsBy": ["priority", "quality", "m3u"],
+            "m3uOrder": ["ipfs", "vacaionesenelmar.xo.je"],
+        },
+        {"streamPriorities": {"trusted": 5}},
+    )
+
+    # Priority, then quality; the account only decides between equal quality.
+    assert _order(plan) == [4, 1, 3, 2]
+    first = plan.profiles[0].groups[0].members[0].channels[0].streams[0]
+    assert first.order_reason == (
+        "priority 5, quality: 480p, 1000kbps, m3u: vacaionesenelmar.xo.je"
+    )
+
+
+def test_order_streams_by_list_ignores_criteria_it_omits(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _four_accounts_streams()
+
+    plan = _m3u_plan(
+        {"orderStreamsBy": ["quality"], "m3uOrder": ["ipfs"]},
+        {"streamPriorities": {"trusted": 5}},
+    )
+
+    # Neither the priority nor the account is used: pure quality order.
+    assert _order(plan) == [1, 3, 2, 4]
+
+
+def test_legacy_quality_value_keeps_priority_then_m3u_then_quality(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _four_accounts_streams()
+
+    plan = _m3u_plan(
+        {"orderStreamsBy": "quality", "m3uOrder": ["ipfs", "vacaionesenelmar.xo.je"]},
+        {"streamPriorities": {"trusted": 5}},
+    )
+
+    assert _order(plan) == [4, 3, 2, 1]

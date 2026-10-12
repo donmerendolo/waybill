@@ -88,21 +88,34 @@
             {
               "type": "string",
               "enum": [
+                "priority",
+                "m3u",
                 "quality"
               ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "m3u",
+                  "quality"
+                ]
+              }
             },
             {
               "type": "null"
             }
           ],
-          "description": "Default stream ordering applied to every channel in this profile"
+          "description": "Default stream ordering applied to every channel in this profile: an ordered list of criteria (priority = streamPriorities, m3u = m3uOrder, quality = resolution then bitrate), e.g. [priority, quality, m3u]. Criteria not listed are not used. The single value 'quality' means [priority, m3u, quality]; absent means [priority, m3u]"
         },
         "m3uOrder": {
           "type": [
             "array",
             "null"
           ],
-          "description": "M3U account names, most preferred first. Breaks ties between streams of equal streamPriorities before orderStreamsBy; unlisted accounts go last"
+          "description": "M3U account names, most preferred first; unlisted accounts go last. Used where orderStreamsBy includes 'm3u' (it does by default)"
         },
         "variables": {
           "type": "object",
@@ -151,8 +164,21 @@
             {
               "type": "string",
               "enum": [
+                "priority",
+                "m3u",
                 "quality"
               ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "m3u",
+                  "quality"
+                ]
+              }
             },
             {
               "type": "null"
@@ -220,8 +246,21 @@
             {
               "type": "string",
               "enum": [
+                "priority",
+                "m3u",
                 "quality"
               ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "m3u",
+                  "quality"
+                ]
+              }
             },
             {
               "type": "null"
@@ -466,6 +505,32 @@
         "type"
       ],
       "additionalProperties": false
+    },
+    "ConfigVariable": {
+      "description": "A predefined variable: {value, mutable} or a bare scalar shorthand for {value: <scalar>, mutable: true}",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "Variable value"
+            },
+            "mutable": {
+              "type": "boolean",
+              "description": "Whether capture groups may override it"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        }
+      ]
     }
   }
 }
