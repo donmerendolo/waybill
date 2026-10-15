@@ -379,6 +379,7 @@
             "convertCardinalNumbers",
             "regex",
             "strip",
+            "normalizeUnicode",
             "set",
             "setMetadata",
             "template"

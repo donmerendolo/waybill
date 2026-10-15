@@ -9,6 +9,7 @@ from src.transformers import build_transformer
 from src.transformers.convert_cardinal_numbers import (
     WaybillTransformerConvertCardinalNumbers,
 )
+from src.transformers.normalize_unicode import WaybillTransformerNormalizeUnicode
 from src.transformers.regex import WaybillTransformerRegex
 from src.transformers.set import WaybillTransformerSet
 from src.transformers.set_metadata import WaybillTransformerSetMetadata
@@ -31,6 +32,12 @@ class TestBuildTransformer:
     def test_builds_strip_transformer(self) -> None:
         cfg = ConfigTransformer(type=TransformerType.STRIP, prefix="UK: ")
         assert isinstance(build_transformer(cfg), WaybillTransformerStrip)
+
+    def test_builds_normalize_unicode_transformer(self) -> None:
+        cfg = ConfigTransformer(type=TransformerType.NORMALIZE_UNICODE, field="tvg_id")
+        t = build_transformer(cfg)
+        assert isinstance(t, WaybillTransformerNormalizeUnicode)
+        assert t.field == "tvg_id"
 
     def test_builds_set_transformer(self) -> None:
         cfg = ConfigTransformer(type=TransformerType.SET, value="NBS One")
