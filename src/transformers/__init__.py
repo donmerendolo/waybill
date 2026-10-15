@@ -1,5 +1,6 @@
 from ..types.config import ConfigTransformer, TransformerType
 from .convert_cardinal_numbers import WaybillTransformerConvertCardinalNumbers
+from .normalize_unicode import WaybillTransformerNormalizeUnicode
 from .regex import WaybillTransformerRegex
 from .set import WaybillTransformerSet
 from .set_metadata import WaybillTransformerSetMetadata
@@ -10,6 +11,7 @@ AnyTransformer = (
     WaybillTransformerRegex
     | WaybillTransformerConvertCardinalNumbers
     | WaybillTransformerStrip
+    | WaybillTransformerNormalizeUnicode
     | WaybillTransformerSet
     | WaybillTransformerSetMetadata
     | WaybillTransformerTemplate
@@ -41,6 +43,9 @@ def build_transformer(cfg: ConfigTransformer) -> AnyTransformer:
         return WaybillTransformerStrip(
             field=cfg.field, prefix=cfg.prefix, suffix=cfg.suffix
         )
+
+    if cfg.type == TransformerType.NORMALIZE_UNICODE:
+        return WaybillTransformerNormalizeUnicode(field=cfg.field)
 
     if cfg.type == TransformerType.SET:
         return WaybillTransformerSet(value=cfg.value, field=cfg.field)

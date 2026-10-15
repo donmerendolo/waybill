@@ -72,6 +72,7 @@ class TransformerType(Enum):
     CONVERT_CARDINAL_NUMBERS = "convertCardinalNumbers"
     REGEX = "regex"
     STRIP = "strip"
+    NORMALIZE_UNICODE = "normalizeUnicode"
     SET = "set"
     SET_METADATA = "setMetadata"
     TEMPLATE = "template"

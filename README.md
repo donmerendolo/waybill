@@ -265,12 +265,13 @@ Transformers rewrite stream fields after matching. They are applied in declarati
 |---|---|
 | `regex` | Replace a regex match (supports capture-group back-references) |
 | `strip` | Remove a fixed prefix and/or suffix |
+| `normalizeUnicode` | Fold decorated letters (squared, full-width, ...) into plain text (NFKC) |
 | `setMetadata` | Set explicit metadata fields (`name`, `logoUrl`, `tvgId`) in one step |
 | `set` | Overwrite an arbitrary field with a literal value (low-level escape hatch) |
 | `convertCardinalNumbers` | Convert between word and digit forms of cardinal numbers |
 | `template` | Render a Jinja2 template string using named capture groups and predefined variables |
 
-Transformers that target a single stream field (`regex`, `strip`, `set`, `convertCardinalNumbers`) share:
+Transformers that target a single stream field (`regex`, `strip`, `normalizeUnicode`, `set`, `convertCardinalNumbers`) share:
 
 | Field | Default | Description |
 |---|---|---|
@@ -305,6 +306,20 @@ Transformers that target a single stream field (`regex`, `strip`, `set`, `conver
 |---|---|---|
 | `prefix` | no | Literal prefix to remove if present |
 | `suffix` | no | Literal suffix to remove if present |
+
+### `normalizeUnicode`
+
+Applies Unicode NFKC normalisation, which turns "decorated" letters into plain ones:
+squared (`🄳🄰🅉🄽 1` → `DAZN 1`), full-width (`ＤＡＺＮ` → `DAZN`), circled, superscript
+and similar. Accents, emoji and flags are kept, so put it before any regex that removes
+emoji: squared letters sit in the same Unicode block as many emoji.
+
+```yaml
+- type: normalizeUnicode
+  field: name
+```
+
+It has no options besides `field`.
 
 ### `set`
 
@@ -582,7 +597,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.6.x – 1.11.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
+| 1.6.x – 1.12.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.
