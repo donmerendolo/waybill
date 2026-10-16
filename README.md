@@ -578,6 +578,7 @@ On every apply, Waybill also:
 
 - Creates missing channel profiles **empty**. Only channels declared in the manifest are enabled in them; other existing channels are not auto-added as enabled.
 - Replaces each channel's stream list with the planned streams, in plan order.
+- Sets the channel's logo from, in order: `setMetadata` `logoUrl`, the most common logo among its streams, or the icon of its EPG entry (like Dispatcharr's "Set logos from EPG"). When none of them has a logo, the channel keeps the logo it already has; Waybill never clears it.
 - Recomputes the channel's catch-up flags (`is_catchup` / `catchup_days`) from its assigned streams (Dispatcharr v0.31+).
 - Copies the radio flag (`is_radio`) from the channel's first stream, as Dispatcharr does for channels created from a stream (Dispatcharr v0.32+). A channel with no streams keeps its current value.
 - Triggers Dispatcharr's EPG programme refresh when a channel's EPG assignment changes.
@@ -610,7 +611,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.13.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
+| 1.13.x – 1.14.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
 | 1.6.x – 1.12.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.24.0 |
 

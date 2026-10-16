@@ -1,10 +1,15 @@
-"""Applier behaviour that tracks Dispatcharr 0.32 changes.
+"""WaybillApplier behaviour.
+
+Dispatcharr 0.32 changes:
 
 - Stream profiles are resolved ignoring case, since 0.32 renamed the built-in
   "ffmpeg"/"streamlink" profiles to "FFmpeg"/"Streamlink".
 - Channels copy is_radio from their first stream, like Dispatcharr's own
   create-from-stream and auto-sync.
 - Catch-up rollup uses Dispatcharr's rollup_catchup_for_channels when present.
+
+Logos: a channel takes the plan's logo, else its EPG icon, and an existing logo
+is never cleared when neither has one.
 
 The Django/Dispatcharr modules are stubbed; src/apply.py is loaded fresh per test.
 """
@@ -20,6 +25,8 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+
+from src.types.plan import ChannelPlan
 
 
 class _QuerySet:
@@ -90,6 +97,7 @@ def _load_apply(
     monkeypatch: pytest.MonkeyPatch,
     profile_names: list[str],
     rollup: object | None = None,
+    **models: object,
 ) -> types.ModuleType:
     repo_root = pathlib.Path(__file__).resolve().parents[2]
     package = f"waybill_applytest_{uuid.uuid4().hex}"
@@ -111,16 +119,17 @@ def _load_apply(
 
     stub("django.db", transaction=SimpleNamespace())
     stub("django.db.models", Max=object)
-    stub(
-        "apps.channels.models",
-        Channel=SimpleNamespace(objects=_ChannelManager()),
-        ChannelGroup=object,
-        ChannelProfile=object,
-        ChannelProfileMembership=object,
-        ChannelStream=SimpleNamespace(objects=_ChannelStreamManager()),
-        Logo=object,
-    )
-    stub("apps.epg.models", EPGData=object)
+    channel_models = {
+        "Channel": SimpleNamespace(objects=_ChannelManager()),
+        "ChannelGroup": object,
+        "ChannelProfile": object,
+        "ChannelProfileMembership": object,
+        "ChannelStream": SimpleNamespace(objects=_ChannelStreamManager()),
+        "Logo": object,
+    }
+    channel_models.update({k: v for k, v in models.items() if k != "EPGData"})
+    stub("apps.channels.models", **channel_models)
+    stub("apps.epg.models", EPGData=models.get("EPGData", object))
     stub(
         "core.models",
         StreamProfile=SimpleNamespace(objects=_StreamProfileManager(profile_names)),
@@ -197,3 +206,133 @@ class TestCatchupRollup:
         _applier(module)._rollup_catchup(SimpleNamespace(pk=3, is_catchup=False))
         assert calls == [[3]]
         assert module.Channel.objects.updates == []
+
+
+class _LogoManager:
+    def __init__(self) -> None:
+        self.logos: dict[str, SimpleNamespace] = {}
+
+    def get_or_create(self, url: str, defaults: dict[str, str]):
+        if url in self.logos:
+            return self.logos[url], False
+        logo = SimpleNamespace(pk=len(self.logos) + 1, url=url, **defaults)
+        self.logos[url] = logo
+        return logo, True
+
+
+class _EPGDataManager:
+    def __init__(self, entries: list[SimpleNamespace]) -> None:
+        self._entries = entries
+
+    def filter(self, tvg_id: str) -> _QuerySet:
+        return _QuerySet([e for e in self._entries if e.tvg_id == tvg_id])
+
+
+class _ExistingChannel:
+    def __init__(self, logo_id: int | None) -> None:
+        self.pk = 1
+        self.name = "DAZN F1"
+        self.tvg_id = "DAZN F1 HD"
+        self.logo_id = logo_id
+        self.epg_data_id = 1
+        self.stream_profile_id = None
+        self.channel_number = 1
+        self.saved_fields: list[str] = []
+
+    def save(self, update_fields: list[str]) -> None:
+        self.saved_fields.extend(update_fields)
+
+
+class _ApplyChannelManager(_ChannelManager):
+    def __init__(self, channel: _ExistingChannel) -> None:
+        super().__init__()
+        self.channel = channel
+
+    def get_or_create(self, **kwargs: object):
+        return self.channel, False
+
+
+class _Deletable:
+    def delete(self) -> tuple[int, dict]:
+        return 0, {}
+
+
+class _ApplyChannelStreamManager(_ChannelStreamManager):
+    def filter(self, **kwargs: object):
+        return _Deletable()
+
+    def bulk_create(self, rows: list[object], ignore_conflicts: bool = False) -> None:
+        pass
+
+
+class TestChannelLogo:
+    def _load(self, monkeypatch, epg_entries: list[SimpleNamespace], channel=None):
+        logos = _LogoManager()
+        models: dict[str, object] = {
+            "Logo": SimpleNamespace(objects=logos),
+            "EPGData": SimpleNamespace(objects=_EPGDataManager(epg_entries)),
+        }
+        if channel is not None:
+            models["Channel"] = SimpleNamespace(objects=_ApplyChannelManager(channel))
+            models["ChannelProfileMembership"] = SimpleNamespace(
+                objects=SimpleNamespace(update_or_create=lambda **kw: (None, False))
+            )
+            stream_manager = _ApplyChannelStreamManager()
+            models["ChannelStream"] = type(
+                "ChannelStream",
+                (),
+                {"objects": stream_manager, "__init__": _channel_stream_init},
+            )
+        return _load_apply(monkeypatch, [], **models), logos
+
+    def test_plan_logo_wins_over_epg_icon(self, monkeypatch) -> None:
+        epg = SimpleNamespace(pk=1, tvg_id="X", name="X", icon_url="http://epg/x.png")
+        module, _ = self._load(monkeypatch, [epg])
+        logo = _applier(module)._resolve_channel_logo("http://m/x.png", epg, "X")
+        assert logo.url == "http://m/x.png"
+
+    def test_falls_back_to_epg_icon(self, monkeypatch) -> None:
+        epg = SimpleNamespace(
+            pk=1, tvg_id="X", name="X HD", icon_url=" http://epg/x.png "
+        )
+        module, _ = self._load(monkeypatch, [epg])
+        logo = _applier(module)._resolve_channel_logo(None, epg, "X")
+        assert (logo.url, logo.name) == ("http://epg/x.png", "X HD")
+
+    def test_no_logo_anywhere(self, monkeypatch) -> None:
+        epg = SimpleNamespace(pk=1, tvg_id="X", name="X", icon_url=None)
+        module, _ = self._load(monkeypatch, [epg])
+        applier = _applier(module)
+        assert applier._resolve_channel_logo(None, epg, "X") is None
+        assert applier._resolve_channel_logo(None, None, "X") is None
+
+    def _apply(self, monkeypatch, epg_entries, current_logo_id):
+        channel = _ExistingChannel(logo_id=current_logo_id)
+        module, logos = self._load(monkeypatch, epg_entries, channel=channel)
+        channel_plan = ChannelPlan(
+            name="DAZN F1", epg_id="DAZN F1 HD", channel_number=1
+        )
+        _applier(module)._apply_channel(
+            channel_plan, SimpleNamespace(name="DAZN"), None
+        )
+        return channel, logos
+
+    def test_apply_keeps_existing_logo_when_nothing_provides_one(
+        self, monkeypatch
+    ) -> None:
+        epg = SimpleNamespace(pk=1, tvg_id="DAZN F1 HD", name="DAZN F1", icon_url="")
+        channel, _ = self._apply(monkeypatch, [epg], current_logo_id=42)
+        assert channel.logo_id == 42
+        assert "logo" not in channel.saved_fields
+
+    def test_apply_sets_epg_icon_as_logo(self, monkeypatch) -> None:
+        epg = SimpleNamespace(
+            pk=1, tvg_id="DAZN F1 HD", name="DAZN F1", icon_url="http://epg/f1.png"
+        )
+        channel, logos = self._apply(monkeypatch, [epg], current_logo_id=42)
+        assert channel.logo_id == logos.logos["http://epg/f1.png"].pk
+        assert "logo" in channel.saved_fields
+
+
+def _channel_stream_init(self, **kwargs: object) -> None:
+    self.__dict__.update(kwargs)
