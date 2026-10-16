@@ -6,8 +6,10 @@ version 1.5.0 (commit `cabc873`). Everything below was added in this fork; the
 
 ## Dispatcharr compatibility
 
-- Built and locked against **Dispatcharr v0.31.0** (upstream targets v0.27.2). The changes still work on older versions.
+- Built and locked against **Dispatcharr v0.32.0** (upstream targets v0.27.2); it also works on v0.31.0. The changes still work on older versions.
 - New channel profiles start empty on 0.31+ instead of receiving every existing channel.
+- `streamProfile` names are matched ignoring case when there is no exact match, so `ffmpeg`/`streamlink` keep working after 0.32 renamed them to `FFmpeg`/`Streamlink`.
+- Channels copy the radio flag (`is_radio`, 0.32+) from their first stream.
 - Catch-up flags (`is_catchup`, `catchup_days`) are kept up to date after streams are assigned.
 - EPG changes now trigger Dispatcharr's programme refresh and guide cache invalidation.
 

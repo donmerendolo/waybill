@@ -16,6 +16,11 @@ from apps.channels.models import (
 from apps.epg.models import EPGData
 from core.models import StreamProfile
 
+try:  # Dispatcharr >= 0.32
+    from apps.channels.utils import rollup_catchup_for_channels
+except ImportError:  # older Dispatcharr
+    rollup_catchup_for_channels = None
+
 from .types.plan import WaybillPlan
 
 if TYPE_CHECKING:
@@ -119,6 +124,10 @@ class WaybillApplier:
         """
         if not hasattr(channel, "is_catchup"):
             return
+        if rollup_catchup_for_channels is not None:
+            # Dispatcharr >= 0.32 exposes the rollup the signal itself uses.
+            rollup_catchup_for_channels([channel.pk])
+            return
         catchup_qs = channel.streams.filter(
             is_catchup=True,
             m3u_account__is_active=True,
@@ -129,10 +138,32 @@ class WaybillApplier:
             catchup_days=max_days or 0,
         )
 
+    def _sync_radio(self, channel: Channel) -> None:
+        """
+        Copy is_radio from the channel's first stream (Dispatcharr 0.32+), as
+        Dispatcharr does when it creates or auto-syncs a channel from a stream.
+        A channel without streams keeps its current value.
+        """
+        if not hasattr(channel, "is_radio"):
+            return
+        is_radio = (
+            ChannelStream.objects.filter(channel=channel)
+            .order_by("order")
+            .values_list("stream__is_radio", flat=True)
+            .first()
+        )
+        if is_radio is not None and channel.is_radio != is_radio:
+            Channel.objects.filter(pk=channel.pk).update(is_radio=is_radio)
+
     def _resolve_stream_profile(self, name: str | None) -> StreamProfile | None:
         if not name:
             return None
-        sp = StreamProfile.objects.filter(name=name).first()
+        # Exact name first; then ignore case, since Dispatcharr 0.32 renamed the
+        # built-in "ffmpeg"/"streamlink" profiles to "FFmpeg"/"Streamlink".
+        sp = (
+            StreamProfile.objects.filter(name=name).first()
+            or StreamProfile.objects.filter(name__iexact=name).first()
+        )
         if sp is None:
             self._logger.warning(
                 f"[apply] StreamProfile {name!r} not found; channel will be created without one."
@@ -243,6 +274,7 @@ class WaybillApplier:
         if stream_rows:
             ChannelStream.objects.bulk_create(stream_rows, ignore_conflicts=True)
         self._rollup_catchup(channel)
+        self._sync_radio(channel)
 
         return (1 if created else 0, 0 if created else 1, len(stream_rows))
 
