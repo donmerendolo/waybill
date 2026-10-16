@@ -30,6 +30,7 @@ New transformer: **`normalizeUnicode`** applies NFKC, turning decorated letters 
 ## Bug fixes
 
 - `setMetadata` `tvgId` and `logoUrl` were ignored when building the plan; they now apply.
+- Apply cleared the logo of every channel whose manifest and streams had none, wiping logos set from the EPG. Such channels now take their EPG icon, or keep their current logo.
 - An empty manifest section (e.g. `members:` with nothing under it) gives a clear error instead of crashing with `'NoneType' object has no attribute 'get'`.
 - `exactMatch` and `containsAny` matchers with pre-transformers no longer miss streams. The database pre-filter used to run on the raw name, before the transformers.
 - Applying is much faster on large libraries: Jinja templates are no longer recompiled for every stream, and the full stream list is loaded once and shared. The slow apply caused uwsgi "Broken pipe" errors.

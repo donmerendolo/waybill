@@ -184,6 +184,24 @@ class WaybillApplier:
         )
         return logo
 
+    def _resolve_channel_logo(
+        self,
+        logo_url: str | None,
+        epg_data: EPGData | None,
+        channel_name: str,
+    ) -> Logo | None:
+        """
+        The channel's logo: the plan's logo URL (setMetadata logoUrl, or the
+        most common logo among its streams), else the icon of its EPG entry,
+        like Dispatcharr's "Set logos from EPG". None when neither has one.
+        """
+        if logo_url:
+            return self._resolve_logo(logo_url, channel_name)
+        icon_url = (getattr(epg_data, "icon_url", None) or "").strip()
+        if not icon_url:
+            return None
+        return self._resolve_logo(icon_url, epg_data.name or channel_name)
+
     def _apply_channel(
         self,
         channel_plan: "ChannelPlan",
@@ -199,8 +217,10 @@ class WaybillApplier:
             return self._apply_placeholder(channel_plan, group, channel_profile)
 
         stream_profile = self._resolve_stream_profile(channel_plan.stream_profile)
-        logo = self._resolve_logo(channel_plan.logo_url, channel_plan.name)
         epg_data = self._resolve_epg_data(channel_plan.epg_id)
+        logo = self._resolve_channel_logo(
+            channel_plan.logo_url, epg_data, channel_plan.name
+        )
 
         new_logo_id: int | None = logo.pk if logo else None
         new_stream_profile_id: int | None = (
@@ -237,7 +257,9 @@ class WaybillApplier:
             if channel.tvg_id != channel_plan.epg_id:
                 channel.tvg_id = channel_plan.epg_id
                 update_fields.append("tvg_id")
-            if channel.logo_id != new_logo_id:
+            # No logo from the manifest, the streams or the EPG: keep the current
+            # one (e.g. set by hand in Dispatcharr) instead of clearing it.
+            if new_logo_id is not None and channel.logo_id != new_logo_id:
                 channel.logo_id = new_logo_id
                 update_fields.append("logo")
             if channel.epg_data_id != new_epg_data_id:
