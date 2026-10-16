@@ -1,0 +1,199 @@
+"""Applier behaviour that tracks Dispatcharr 0.32 changes.
+
+- Stream profiles are resolved ignoring case, since 0.32 renamed the built-in
+  "ffmpeg"/"streamlink" profiles to "FFmpeg"/"Streamlink".
+- Channels copy is_radio from their first stream, like Dispatcharr's own
+  create-from-stream and auto-sync.
+- Catch-up rollup uses Dispatcharr's rollup_catchup_for_channels when present.
+
+The Django/Dispatcharr modules are stubbed; src/apply.py is loaded fresh per test.
+"""
+
+from __future__ import annotations
+
+import importlib
+import importlib.util
+import pathlib
+import sys
+import types
+import uuid
+from types import SimpleNamespace
+
+import pytest
+
+
+class _QuerySet:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def first(self) -> object | None:
+        return self._rows[0] if self._rows else None
+
+
+class _StreamProfileManager:
+    def __init__(self, names: list[str]) -> None:
+        self._profiles = [SimpleNamespace(pk=i, name=n) for i, n in enumerate(names, 1)]
+
+    def filter(self, **kwargs: str) -> _QuerySet:
+        if "name" in kwargs:
+            rows = [p for p in self._profiles if p.name == kwargs["name"]]
+        else:
+            wanted = kwargs["name__iexact"].lower()
+            rows = [p for p in self._profiles if p.name.lower() == wanted]
+        return _QuerySet(rows)
+
+
+class _ChannelStreamQuerySet:
+    def __init__(self, flags: list[bool]) -> None:
+        self._flags = flags
+
+    def order_by(self, *fields: str) -> "_ChannelStreamQuerySet":
+        return self
+
+    def values_list(self, field: str, flat: bool = False) -> _QuerySet:
+        assert (field, flat) == ("stream__is_radio", True)
+        return _QuerySet(self._flags)
+
+
+class _ChannelStreamManager:
+    def __init__(self) -> None:
+        self.flags: list[bool] = []
+
+    def filter(self, **kwargs: object) -> _ChannelStreamQuerySet:
+        return _ChannelStreamQuerySet(self.flags)
+
+
+class _ChannelManager:
+    def __init__(self) -> None:
+        self.updates: list[dict[str, object]] = []
+
+    def filter(self, **kwargs: object) -> "_ChannelManager":
+        return self
+
+    def update(self, **kwargs: object) -> int:
+        self.updates.append(kwargs)
+        return 1
+
+
+class _Logger:
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+
+    def info(self, message: str) -> None:
+        pass
+
+    def warning(self, message: str) -> None:
+        self.warnings.append(message)
+
+
+def _load_apply(
+    monkeypatch: pytest.MonkeyPatch,
+    profile_names: list[str],
+    rollup: object | None = None,
+) -> types.ModuleType:
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    package = f"waybill_applytest_{uuid.uuid4().hex}"
+    package_mod = types.ModuleType(package)
+    package_mod.__path__ = [str(repo_root / "src")]
+    monkeypatch.setitem(sys.modules, package, package_mod)
+    for name in ("src.types", "src.types.plan"):
+        monkeypatch.setitem(
+            sys.modules,
+            f"{package}.{name.removeprefix('src.')}",
+            importlib.import_module(name),
+        )
+
+    def stub(name: str, **attrs: object) -> None:
+        mod = types.ModuleType(name)
+        for key, value in attrs.items():
+            setattr(mod, key, value)
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    stub("django.db", transaction=SimpleNamespace())
+    stub("django.db.models", Max=object)
+    stub(
+        "apps.channels.models",
+        Channel=SimpleNamespace(objects=_ChannelManager()),
+        ChannelGroup=object,
+        ChannelProfile=object,
+        ChannelProfileMembership=object,
+        ChannelStream=SimpleNamespace(objects=_ChannelStreamManager()),
+        Logo=object,
+    )
+    stub("apps.epg.models", EPGData=object)
+    stub(
+        "core.models",
+        StreamProfile=SimpleNamespace(objects=_StreamProfileManager(profile_names)),
+    )
+    if rollup is None:
+        monkeypatch.setitem(sys.modules, "apps.channels.utils", None)
+    else:
+        stub("apps.channels.utils", rollup_catchup_for_channels=rollup)
+
+    spec = importlib.util.spec_from_file_location(
+        f"{package}.apply", repo_root / "src" / "apply.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _applier(module: types.ModuleType) -> object:
+    plan = SimpleNamespace(profiles=[])
+    return module.WaybillApplier(plan, "upsert", _Logger())
+
+
+class TestStreamProfileLookup:
+    def test_old_lowercase_name_finds_renamed_profile(self, monkeypatch) -> None:
+        module = _load_apply(monkeypatch, ["Proxy", "FFmpeg", "Streamlink"])
+        applier = _applier(module)
+        assert applier._resolve_stream_profile("ffmpeg").name == "FFmpeg"
+        assert applier._resolve_stream_profile("streamlink").name == "Streamlink"
+
+    def test_exact_name_wins_over_case_insensitive_match(self, monkeypatch) -> None:
+        module = _load_apply(monkeypatch, ["FFmpeg", "ffmpeg"])
+        applier = _applier(module)
+        assert applier._resolve_stream_profile("ffmpeg").pk == 2
+
+    def test_unknown_profile_warns(self, monkeypatch) -> None:
+        module = _load_apply(monkeypatch, ["Proxy"])
+        applier = _applier(module)
+        assert applier._resolve_stream_profile("vlc") is None
+        assert applier._logger.warnings
+
+
+class TestSyncRadio:
+    def _run(self, monkeypatch, flags: list[bool], current: bool) -> list[dict]:
+        module = _load_apply(monkeypatch, [])
+        module.ChannelStream.objects.flags = flags
+        channel = SimpleNamespace(pk=7, is_radio=current)
+        _applier(module)._sync_radio(channel)
+        return module.Channel.objects.updates
+
+    def test_copies_radio_flag_from_first_stream(self, monkeypatch) -> None:
+        assert self._run(monkeypatch, [True, False], current=False) == [
+            {"is_radio": True}
+        ]
+
+    def test_no_write_when_already_equal(self, monkeypatch) -> None:
+        assert self._run(monkeypatch, [False], current=False) == []
+
+    def test_channel_without_streams_keeps_value(self, monkeypatch) -> None:
+        assert self._run(monkeypatch, [], current=True) == []
+
+    def test_older_dispatcharr_without_field_is_skipped(self, monkeypatch) -> None:
+        module = _load_apply(monkeypatch, [])
+        module.ChannelStream.objects.flags = [True]
+        _applier(module)._sync_radio(SimpleNamespace(pk=7))
+        assert module.Channel.objects.updates == []
+
+
+class TestCatchupRollup:
+    def test_uses_dispatcharr_helper_when_available(self, monkeypatch) -> None:
+        calls: list[list[int]] = []
+        module = _load_apply(monkeypatch, [], rollup=calls.append)
+        _applier(module)._rollup_catchup(SimpleNamespace(pk=3, is_catchup=False))
+        assert calls == [[3]]
+        assert module.Channel.objects.updates == []

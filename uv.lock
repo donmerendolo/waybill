@@ -497,8 +497,8 @@ wheels = [
 
 [[package]]
 name = "dispatcharr"
-version = "0.31.0"
-source = { git = "https://github.com/Dispatcharr/Dispatcharr?tag=v0.31.0#bcbb68c4f054ee56383a41604cfcd7302b85da66" }
+version = "0.32.0"
+source = { git = "https://github.com/Dispatcharr/Dispatcharr?tag=v0.32.0#c52bf87acb7ff2d787d6dcfb9fe3d39999585912" }
 dependencies = [
     { name = "celery", extra = ["redis"] },
     { name = "channels" },
@@ -2488,7 +2488,7 @@ wheels = [
 
 [[package]]
 name = "waybill"
-version = "1.12.0"
+version = "1.13.0"
 source = { editable = "." }
 dependencies = [
     { name = "dispatcharr" },
@@ -2511,7 +2511,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dispatcharr", git = "https://github.com/Dispatcharr/Dispatcharr?tag=v0.31.0" },
+    { name = "dispatcharr", git = "https://github.com/Dispatcharr/Dispatcharr?tag=v0.32.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
 ]
 

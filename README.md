@@ -6,7 +6,7 @@
 See [FORK-CHANGES.md](FORK-CHANGES.md) for what this fork changes from [upstream Waybill](https://github.com/Matthew-Beckett/waybill).
 
 > [!NOTE]
-> Built against Dispatcharr v0.31.0. The apply path degrades gracefully on older releases that lack the newer hooks.
+> Built against Dispatcharr v0.32.0 and works on v0.31.0. The apply path degrades gracefully on older releases that lack the newer hooks.
 
 A [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) plugin for managing channel configurations declaratively. You define a YAML manifest describing which streams to keep and how to name them. Waybill plans and applies those changes to Dispatcharr for you.
 
@@ -81,7 +81,7 @@ Both fields are required. The only supported values are `WaybillConfig` and `v1a
 member → group → profile → (none)
 ```
 
-Setting `streamProfile: null` at any level explicitly clears the inherited value.
+Setting `streamProfile: null` at any level explicitly clears the inherited value. Names are matched exactly first and then ignoring case, so `ffmpeg` still finds the built-in profile that Dispatcharr v0.32 renamed to `FFmpeg` (likewise `streamlink` → `Streamlink`).
 
 ### Profile key and channel numbering
 
@@ -569,6 +569,7 @@ On every apply, Waybill also:
 - Creates missing channel profiles **empty**. Only channels declared in the manifest are enabled in them; other existing channels are not auto-added as enabled.
 - Replaces each channel's stream list with the planned streams, in plan order.
 - Recomputes the channel's catch-up flags (`is_catchup` / `catchup_days`) from its assigned streams (Dispatcharr v0.31+).
+- Copies the radio flag (`is_radio`) from the channel's first stream, as Dispatcharr does for channels created from a stream (Dispatcharr v0.32+). A channel with no streams keeps its current value.
 - Triggers Dispatcharr's EPG programme refresh when a channel's EPG assignment changes.
 
 > [!NOTE]
@@ -599,6 +600,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
+| 1.13.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
 | 1.6.x – 1.12.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.27.2 |
 
