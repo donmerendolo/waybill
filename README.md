@@ -3,6 +3,8 @@
 > [!CAUTION]
 > **This fork is entirely vibe coded.**
 
+See [FORK-CHANGES.md](FORK-CHANGES.md) for what this fork changes from [upstream Waybill](https://github.com/Matthew-Beckett/waybill).
+
 > [!NOTE]
 > Built against Dispatcharr v0.31.0. The apply path degrades gracefully on older releases that lack the newer hooks.
 
