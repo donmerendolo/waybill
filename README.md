@@ -113,23 +113,33 @@ members:
 
 ### Stream priorities
 
-Some feeds claim to carry a channel but are unreliable, so quality alone is not a good order. Give individual feeds an integer priority with `streamPriorities`. Every feed not listed has priority `0`, and higher priorities go first. Where priority sits relative to quality and M3U account is set by `orderStreamsBy` (see [Stream order](#stream-order)); by default it comes first. Give feeds you trust a positive number, and unreliable ones a negative number so they are only tried last:
+Some feeds claim to carry a channel but are unreliable (wrong channel, wrong language, frequent drops), so quality alone is not a good order. `streamPriorities` gives individual feeds of a member an integer priority:
 
 ```yaml
 - name: DAZN F1
   streamPriorities:
-    "<acestream-id-of-reliable-feed>": 10   # reliable: always first, even over 4K
+    "<acestream-id-of-reliable-feed>": 10   # reliable: try it first, even over 4K
     "<acestream-id-of-flaky-feed>": -10     # often the wrong channel: last resort
   matchers:
     - type: exactMatch
       values: ["DAZN F1", "DAZN F1 FHD", "DAZN F1 SD", ...]
 ```
 
-A key matches a feed whose **URL contains it**, such as an AceStream id, or whose Dispatcharr stream hash equals it. If several keys match one feed, the first one listed applies. Quote the keys, because YAML reads an id made only of digits as a number.
+How a feed gets its priority:
 
-Matchers and priorities use different identifiers on purpose. Use names in matchers to decide which streams belong to a channel, since names survive provider refreshes. Use URLs in `streamPriorities` to rank individual feeds, since several feeds often share a name. If a feed's URL changes, its key stops matching and the feed falls back to priority 0, so nothing breaks; the plan warns about every key that matched none of the member's streams, so stale keys are easy to spot.
+1. Only the streams the member's matchers already selected are considered. A key never adds a stream to a channel or moves one between channels.
+2. For each of those streams, the keys are checked in the order they are written. The first key that fits gives the stream its priority. A key fits when either:
+   - it is **contained in the stream's URL** (a plain, case-sensitive substring check), or
+   - it is **equal to the stream's hash** in Dispatcharr.
+3. A stream that no key fits has priority `0`.
+4. Streams are then sorted by `orderStreamsBy` (see [Stream order](#stream-order)). By default priority comes first, highest first: positive numbers go before unlisted feeds, negative numbers after them.
+5. A key that fits none of the member's streams does nothing, and the plan warns about it (`streamPriorities entry matched no stream`), so keys for feeds that have gone away are easy to spot.
 
-Priorities only order the streams a member's matchers already selected: a key never adds a stream to a channel. The plan shows each stream's priority next to it.
+The plan shows each stream's priority next to it.
+
+Which key to use: for AceStream feeds, the id after `id=` in the stream URL (`http://host/ace/getstream?id=<id>`) identifies the feed. Any other part of the URL works too, but keep it specific: a short key such as `123` can be contained in the URLs of feeds you did not mean. Always quote keys, because YAML reads an id made only of digits as a number.
+
+Keys are URLs, not names, on purpose: several feeds often share the same name, and priorities exist to tell them apart. Names decide which streams a channel gets (matchers); URLs decide the order of those streams. If a feed's URL changes, its key stops fitting and the feed goes back to priority `0`; nothing else breaks.
 
 ### Preferring M3U accounts
 
