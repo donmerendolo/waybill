@@ -1,0 +1,39 @@
+# Changes from upstream Waybill
+
+This fork is based on [Matthew-Beckett/waybill](https://github.com/Matthew-Beckett/waybill) at
+version 1.5.0 (commit `cabc873`). Everything below was added in this fork; the
+[README](README.md) has the full reference for each option.
+
+## Dispatcharr compatibility
+
+- Built and locked against **Dispatcharr v0.31.0** (upstream targets v0.27.2). The changes still work on older versions.
+- New channel profiles start empty on 0.31+ instead of receiving every existing channel.
+- Catch-up flags (`is_catchup`, `catchup_days`) are kept up to date after streams are assigned.
+- EPG changes now trigger Dispatcharr's programme refresh and guide cache invalidation.
+
+## New manifest options
+
+| Option | Where | What it does |
+|---|---|---|
+| `startChannelNumber` | profile | Numbers channels consecutively in manifest order. |
+| `channelNumber` | member | Pins a channel to a fixed number, so deleting a channel leaves a gap instead of renumbering the rest. |
+| `keepEmptyChannels` | profile | A member with no streams keeps its channel, disabled, with its number, logo and EPG. It is re-enabled when streams return. |
+| `streamPriorities` | member | Integer priority per feed, keyed by URL or stream hash (not by name). Higher goes first; negative sends unreliable feeds to the end. |
+| `m3uOrder` | profile, group, member | Ranks M3U accounts by name, to prefer one provider's copy of a channel. |
+| `orderStreamsBy` | profile, group, member | Now also accepts a list of criteria (`priority`, `quality`, `m3u`) applied in order, e.g. `[priority, quality, m3u]`. The old single value `quality` still works. |
+
+New transformer: **`normalizeUnicode`** applies NFKC, turning decorated letters such as squared
+`🄳🄰🅉🄽` or full-width `ＤＡＺＮ` into plain text before matching.
+
+## Bug fixes
+
+- `setMetadata` `tvgId` and `logoUrl` were ignored when building the plan; they now apply.
+- An empty manifest section (e.g. `members:` with nothing under it) gives a clear error instead of crashing with `'NoneType' object has no attribute 'get'`.
+- `exactMatch` and `containsAny` matchers with pre-transformers no longer miss streams. The database pre-filter used to run on the raw name, before the transformers.
+- Applying is much faster on large libraries: Jinja templates are no longer recompiled for every stream, and the full stream list is loaded once and shared. The slow apply caused uwsgi "Broken pipe" errors.
+- JSON schema: nullable fields keep `null`, and a dangling reference was removed.
+
+## Releases and updates
+
+- A GitHub Actions workflow builds `waybill.zip` and publishes a release on every push to `main` that bumps the version.
+- Each release also publishes a Dispatcharr plugin-repo `manifest.json` to the `releases` branch, so the plugin can be installed and updated from the Dispatcharr dashboard (see [Updating from the Dispatcharr dashboard](README.md#updating-from-the-dispatcharr-dashboard)).
