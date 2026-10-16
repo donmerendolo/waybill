@@ -12,7 +12,12 @@ VENDOR = ROOT / "src" / "vendor"
 
 _INCLUDE = ("plugin.json", "plugin.py", "src")
 _EXCLUDE_DIRS = frozenset({"__pycache__"})
-_EXCLUDE_SUFFIXES = frozenset({".pyc", ".pyo"})
+# Compiled extensions are left out: the plugin must not depend on the build
+# machine's Python version and CPU, and every vendored package (markupsafe,
+# pyyaml) falls back to pure Python without them. A loaded .so also stays open
+# in Dispatcharr's processes, and on some filesystems that blocks deleting the
+# old plugin folder on update ("Failed to back up existing plugin").
+_EXCLUDE_SUFFIXES = frozenset({".pyc", ".pyo", ".so", ".pyd", ".dylib"})
 
 
 def _version() -> str:

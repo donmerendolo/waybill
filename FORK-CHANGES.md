@@ -35,6 +35,7 @@ New transformer: **`normalizeUnicode`** applies NFKC, turning decorated letters 
 - `exactMatch` and `containsAny` matchers with pre-transformers no longer miss streams. The database pre-filter used to run on the raw name, before the transformers.
 - Applying is much faster on large libraries: Jinja templates are no longer recompiled for every stream, and the full stream list is loaded once and shared. The slow apply caused uwsgi "Broken pipe" errors.
 - JSON schema: nullable fields keep `null`, and a dangling reference was removed.
+- The plugin ZIP no longer ships compiled extensions (`.so`) for markupsafe and pyyaml; both use their pure-Python code. The ZIP no longer depends on the build machine's Python version and CPU, and the loaded `.so` no longer blocks Dispatcharr from removing the old plugin folder on update (`Failed to back up existing plugin: ... Directory not empty`).
 
 ## Releases and updates
 
