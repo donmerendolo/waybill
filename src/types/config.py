@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 from enum import Enum as Enum
 from typing import Any, Mapping, cast
@@ -429,6 +430,80 @@ def _to_order_streams_by(raw: Any) -> "OrderStreamsBy | list[OrderStreamsBy] | N
     return OrderStreamsBy(str(raw))
 
 
+_DURATION_RE = re.compile(r"^\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m(?:in)?)?\s*$", re.I)
+
+
+def _to_minutes(raw: Any, where: str, key: str) -> int:
+    """Coerce a duration to whole minutes: 45, "45m", "2h", "1h30m". Absent is 0."""
+    if raw is None or raw == "":
+        return 0
+    if isinstance(raw, bool):
+        raise ValueError(f"{where} {key} must be a duration such as 30m or 1h30m")
+    if isinstance(raw, int):
+        minutes = raw
+    else:
+        match = _DURATION_RE.match(str(raw))
+        if not match or not any(match.groups()):
+            raise ValueError(
+                f"{where} {key} must be a duration such as 30m or 1h30m, got {raw!r}"
+            )
+        minutes = int(match.group(1) or 0) * 60 + int(match.group(2) or 0)
+    if minutes < 0:
+        raise ValueError(f"{where} {key} must not be negative, got {raw!r}")
+    return minutes
+
+
+@dataclass(frozen=True)
+class ConfigEpgSchedule:
+    """epgSchedule: enable a channel only around EPG programmes that match.
+
+    A programme counts when every matcher accepts it (no matchers: any
+    programme). The channel is enabled from `before` minutes before a counting
+    programme starts until `after` minutes after it ends, and disabled otherwise.
+    `active` is False for `epgSchedule: false`, which clears an inherited rule.
+    """
+
+    before: int = 0
+    after: int = 0
+    matchers: tuple[ConfigMatcher, ...] = ()
+    active: bool = True
+
+
+EPG_SCHEDULE_OFF = ConfigEpgSchedule(active=False)
+
+
+def _to_epg_schedule(raw: Any, where: str) -> "ConfigEpgSchedule | None":
+    """Coerce epgSchedule. Absent inherits (None); false clears an inherited rule."""
+    if raw is None:
+        return None
+    if raw is False:
+        return EPG_SCHEDULE_OFF
+    if isinstance(raw, ConfigEpgSchedule):
+        return raw
+    item = _require_mapping(raw, f"{where} epgSchedule")
+    unknown = set(item) - {"before", "after", "matchers"}
+    if unknown:
+        raise ValueError(
+            f"{where} epgSchedule has unknown keys: {', '.join(sorted(map(str, unknown)))}"
+        )
+    raw_matchers = item.get("matchers") or []
+    if not isinstance(raw_matchers, (list, tuple)):
+        raise ValueError(f"{where} epgSchedule matchers must be a list")
+    matchers = tuple(
+        ConfigMember._to_matcher(
+            m
+            if isinstance(m, ConfigMatcher)
+            else _require_mapping(m, f"matcher #{i} of {where} epgSchedule")
+        )
+        for i, m in enumerate(cast(list[Any], raw_matchers), 1)
+    )
+    return ConfigEpgSchedule(
+        before=_to_minutes(item.get("before"), f"{where} epgSchedule", "before"),
+        after=_to_minutes(item.get("after"), f"{where} epgSchedule", "after"),
+        matchers=matchers,
+    )
+
+
 @dataclass
 class ConfigMember:
     name: str
@@ -442,6 +517,8 @@ class ConfigMember:
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     channel_number: int | None = None
     stream_priorities: dict[str, int] = field(default_factory=_empty_str_int_dict)
+    # None inherits from the enclosing scope; EPG_SCHEDULE_OFF clears it.
+    epg_schedule: ConfigEpgSchedule | None = None
 
     def __post_init__(self):
         where = f"member {self.name!r}"
@@ -544,6 +621,7 @@ class ConfigGroup:
     # None inherits from the enclosing scope; [] clears an inherited order.
     m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
+    epg_schedule: ConfigEpgSchedule | None = None
 
     def __post_init__(self):
         self.members = [
@@ -607,6 +685,9 @@ class ConfigGroup:
                 item.get("streamPriorities"),
                 f"member {item.get('name', '')!r}",
             ),
+            epg_schedule=_to_epg_schedule(
+                item.get("epgSchedule"), f"member {item.get('name', '')!r}"
+            ),
         )
 
 
@@ -621,6 +702,7 @@ class ConfigProfile:
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     start_channel_number: int | None = None
     keep_empty_channels: bool = False
+    epg_schedule: ConfigEpgSchedule | None = None
 
     def __post_init__(self):
         self.groups = {
@@ -659,6 +741,9 @@ class ConfigProfile:
             order_streams_by=_to_order_streams_by(item.get("orderStreamsBy")),
             m3u_order=_to_m3u_order(item.get("m3uOrder"), f"{item.get('name', '')!r}"),
             variables=variables,
+            epg_schedule=_to_epg_schedule(
+                item.get("epgSchedule"), f"group {item.get('name', '')!r}"
+            ),
         )
 
 
@@ -710,6 +795,9 @@ class ConfigSpec:
                 item.get("keepEmptyChannels"),
                 f"profile {item.get('name', '')!r}",
                 "keepEmptyChannels",
+            ),
+            epg_schedule=_to_epg_schedule(
+                item.get("epgSchedule"), f"profile {item.get('name', '')!r}"
             ),
         )
 

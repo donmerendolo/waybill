@@ -174,6 +174,33 @@ Criteria you leave out are not used. Like `streamProfile`, it can be set on a pr
 
 By default a member that matches no streams produces no channel. Set `keepEmptyChannels: true` on a profile to keep it instead: the channel (named after the member) stays in Dispatcharr, apply removes its streams and **disables** it in the profile, and its number, logo and EPG are left untouched. The next apply that finds matching streams again fills it in and re-enables it. The plan marks these channels as `no streams, kept disabled`.
 
+### Enabling channels by EPG schedule
+
+`epgSchedule` enables a channel only around the guide programmes it is for, and disables it in the profile the rest of the time. Useful for event channels (DAZN F1, a match feed) that show filler between events. Waybill reads the programmes from Dispatcharr's EPG (the entry the channel's EPG id points to) each time it plans or applies:
+
+```yaml
+- name: DAZN F1
+  epgSchedule:
+    before: 30m          # enable 30 minutes before a matching programme starts
+    after: 15m           # keep enabled until 15 minutes after it ends
+    matchers:            # which programmes count: every matcher must accept it
+      - type: containsAny
+        substrings: ["Fórmula 1", "F1"]
+      - type: containsAny
+        action: drop
+        substrings: ["Resumen", "Previo"]
+```
+
+How a channel is decided, at the moment of the plan or apply:
+
+1. Programmes of the channel's EPG entry are checked against the `matchers`, the same matcher types as for streams (with pre-transformers too). They read these programme fields: `name` (the title, and the default), `title`, `sub_title` and `description`. Without `matchers`, any programme counts.
+2. The channel is **enabled** if a programme that counts starts within `before` from now, is airing, or ended less than `after` ago. Otherwise it is **disabled** in the profile. It keeps its streams, number, logo and EPG either way.
+3. If there is nothing to decide on, the channel is left enabled and the plan says why. This covers a channel with no EPG id or EPG entry, and a guide with no programme still to end (e.g. an EPG source that stopped refreshing). A broken guide never switches a lineup off.
+
+`before` and `after` take minutes (`45`) or a duration (`30m`, `2h`, `1h30m`); both default to 0. Like `streamProfile`, `epgSchedule` can be set on a profile, a group or a member, and the most specific one applies; `epgSchedule: false` clears an inherited rule. Channels kept by `keepEmptyChannels` stay disabled regardless. The plan shows the decision under each channel, e.g. `Schedule: on: "Fórmula 1: GP de México" Sun 20:00-22:00`, or `— disabled by epgSchedule`.
+
+The schedule only changes when Waybill runs, so run Apply regularly: set **Auto-apply every (minutes)** in the plugin settings (e.g. `5`; `0`, the default, turns it off), or call Dispatcharr's API (`POST /api/plugins/plugins/<key>/run/` with `{"action": "apply"}`) from a scheduler of your own. The timer runs in one Dispatcharr process; it re-reads the setting on each tick, so changes need no restart, and it never runs two applies at once.
+
 ---
 
 ## Matchers
@@ -578,6 +605,7 @@ On every apply, Waybill also:
 
 - Creates missing channel profiles **empty**. Only channels declared in the manifest are enabled in them; other existing channels are not auto-added as enabled.
 - Replaces each channel's stream list with the planned streams, in plan order.
+- Enables each channel in the profile, or disables it when its `epgSchedule` rule says it is off right now (see [Enabling channels by EPG schedule](#enabling-channels-by-epg-schedule)).
 - Sets the channel's logo from, in order: `setMetadata` `logoUrl`, the most common logo among its streams, or the icon of its EPG entry (like Dispatcharr's "Set logos from EPG"). When none of them has a logo, the channel keeps the logo it already has; Waybill never clears it.
 - Recomputes the channel's catch-up flags (`is_catchup` / `catchup_days`) from its assigned streams (Dispatcharr v0.31+).
 - Copies the radio flag (`is_radio`) from the channel's first stream, as Dispatcharr does for channels created from a stream (Dispatcharr v0.32+). A channel with no streams keeps its current value.
@@ -611,7 +639,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.13.x – 1.14.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
+| 1.13.x – 1.15.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
 | 1.6.x – 1.12.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.24.0 |
 

@@ -132,6 +132,11 @@ class ChannelPlan:
     # True for a channel kept by keepEmptyChannels although no stream matched it.
     # Apply keeps it disabled with no streams and leaves its metadata untouched.
     placeholder: bool = False
+    # False when an epgSchedule rule switches the channel off right now; apply
+    # then keeps it (with its streams) but disables it in the profile.
+    enabled: bool = True
+    # Why epgSchedule enabled or disabled the channel; None without a rule.
+    schedule: str | None = None
 
 
 @dataclass(frozen=True)

@@ -280,12 +280,18 @@ class WaybillApplier:
                     f"[apply] Updated channel: {channel_plan.name!r} in group {group.name!r}"
                 )
 
-        # Ensure this channel is a member of the profile and is enabled.
+        # Ensure this channel is a member of the profile, enabled unless an
+        # epgSchedule rule switches it off right now (it keeps its streams).
         ChannelProfileMembership.objects.update_or_create(
             channel_profile=channel_profile,
             channel=channel,
-            defaults={"enabled": True},
+            defaults={"enabled": channel_plan.enabled},
         )
+        if not channel_plan.enabled:
+            self._logger.info(
+                f"[apply] {channel_plan.name!r} disabled by epgSchedule "
+                f"({channel_plan.schedule})"
+            )
 
         # Reconcile stream assignments: remove stale, bulk-create from plan.
         ChannelStream.objects.filter(channel=channel).delete()

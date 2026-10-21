@@ -60,6 +60,9 @@ YAML_KEY: dict[tuple[type, str], str] = {
     (ConfigProfile, "m3u_order"): "m3uOrder",
     (ConfigGroup, "m3u_order"): "m3uOrder",
     (ConfigMember, "m3u_order"): "m3uOrder",
+    (ConfigProfile, "epg_schedule"): "epgSchedule",
+    (ConfigGroup, "epg_schedule"): "epgSchedule",
+    (ConfigMember, "epg_schedule"): "epgSchedule",
 }
 
 # Fields entirely omitted from the schema (internal implementation details).
@@ -123,6 +126,16 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "absent means [priority, m3u]"
     ),
     (ConfigProfile, "groups"): "Map of group key \u2192 ConfigGroup",
+    (ConfigProfile, "epg_schedule"): (
+        "Enable each channel only around EPG programmes that match; inherited by "
+        "groups and members"
+    ),
+    (ConfigGroup, "epg_schedule"): (
+        "epgSchedule override for this group; false clears the profile's rule"
+    ),
+    (ConfigMember, "epg_schedule"): (
+        "epgSchedule override for this member; false clears the inherited rule"
+    ),
     (ConfigProfile, "keep_empty_channels"): (
         "When true, a member that matches no streams still produces a channel (named "
         "after the member). Apply keeps it disabled in the profile with no streams and "
@@ -429,6 +442,52 @@ def build_schema() -> dict[str, Any]:
                 "additionalProperties": False,
             },
             {"type": ["string", "number", "boolean"]},
+        ],
+    }
+
+    # Hand-written: durations accept minutes or "1h30m", and false clears an
+    # inherited rule (see _to_epg_schedule).
+    duration = {
+        "type": ["integer", "string"],
+        "pattern": "^\\s*(\\d+\\s*h)?\\s*(\\d+\\s*m(in)?)?\\s*$",
+    }
+    defs["ConfigEpgSchedule"] = {
+        "description": (
+            "Enable the channel only around EPG programmes that match: from 'before' "
+            "ahead of a matching programme's start until 'after' past its end. "
+            "false clears an inherited rule"
+        ),
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "before": {
+                        **duration,
+                        "description": (
+                            "How long before a matching programme starts the channel "
+                            "is enabled: minutes, or e.g. 30m, 1h30m (default 0)"
+                        ),
+                    },
+                    "after": {
+                        **duration,
+                        "description": (
+                            "How long after a matching programme ends the channel "
+                            "stays enabled (default 0)"
+                        ),
+                    },
+                    "matchers": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/ConfigMatcher"},
+                        "description": (
+                            "Which programmes count; every matcher must accept it. "
+                            "Fields: name/title (default), sub_title, description. "
+                            "No matchers: any programme counts"
+                        ),
+                    },
+                },
+                "additionalProperties": False,
+            },
+            {"const": False},
         ],
     }
 

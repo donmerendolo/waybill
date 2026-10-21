@@ -4,12 +4,15 @@ from collections import defaultdict
 from collections.abc import Iterable
 from copy import copy
 from dataclasses import replace
+from datetime import datetime
 
 from apps.channels.models import Stream
 
 from ._jinja import extract_template_variables
 from .matchers import build_matcher, build_q_filter
 from .matchers.base import WaybillMatcherBase
+from .schedule import EpgGuide
+from .schedule import evaluate as evaluate_schedule
 from .transformers import build_transformer
 from .validators import build_validator
 from .validators.base import (
@@ -18,6 +21,7 @@ from .validators.base import (
     WaybillStreamValidatorBase,
 )
 from .types.config import (
+    ConfigEpgSchedule,
     ConfigMember,
     ConfigProfile,
     ConfigVariable,
@@ -572,19 +576,33 @@ class ProfilePipeline:
         chunk_size: int = CHUNK_SIZE,
         all_streams: "AllStreams | None" = None,
         accounts: "AccountNames | None" = None,
+        guide: "EpgGuide | None" = None,
     ) -> ProfilePlan:
         groups = [
             c.process(chunk_size=chunk_size, all_streams=all_streams, accounts=accounts)
             for c in self._pipelines
         ]
-        groups = _finalise_channels(groups, self._profile)
+        groups = _finalise_channels(groups, self._profile, guide)
         return ProfilePlan(key=self._key, name=self._name, groups=groups)
 
 
+def _effective_epg_schedule(
+    *scopes: "ConfigEpgSchedule | None",
+) -> "ConfigEpgSchedule | None":
+    """The most specific epgSchedule set (member, group, profile); None if off or unset."""
+    for rule in scopes:
+        if rule is not None:
+            return rule if rule.active else None
+    return None
+
+
 def _finalise_channels(
-    groups: list[GroupPlan], profile: ConfigProfile
+    groups: list[GroupPlan],
+    profile: ConfigProfile,
+    guide: "EpgGuide | None" = None,
 ) -> list[GroupPlan]:
-    """Add keepEmptyChannels placeholders and assign channel numbers in manifest order.
+    """Add keepEmptyChannels placeholders, apply epgSchedule rules and assign
+    channel numbers in manifest order.
 
     Numbering runs over groups, then members, then channels. A member's
     channelNumber pins its first channel to that number and numbering continues
@@ -601,8 +619,18 @@ def _finalise_channels(
                 channels = [ChannelPlan(name=member_cfg.name, placeholder=True)]
             if member_cfg.channel_number is not None:
                 number = member_cfg.channel_number
+            rule = _effective_epg_schedule(
+                member_cfg.epg_schedule, group_cfg.epg_schedule, profile.epg_schedule
+            )
             numbered = []
             for channel in channels:
+                if rule is not None and not channel.placeholder:
+                    if guide is None:
+                        guide = EpgGuide()
+                    decision = evaluate_schedule(rule, guide, channel.epg_id)
+                    channel = replace(
+                        channel, enabled=decision.enabled, schedule=decision.reason
+                    )
                 numbered.append(replace(channel, channel_number=number))
                 if number is not None:
                     number += 1
@@ -621,11 +649,21 @@ class WaybillPipeline:
             for prof_key, prof in config.spec.profiles.items()
         ]
 
-    def compute_plan(self, chunk_size: int = CHUNK_SIZE) -> WaybillPlan:
+    def compute_plan(
+        self, chunk_size: int = CHUNK_SIZE, now: "datetime | None" = None
+    ) -> WaybillPlan:
         all_streams = AllStreams(chunk_size=chunk_size)
         accounts = AccountNames()
+        # One "now" and one programme cache for the whole plan; only queried
+        # when a member has an epgSchedule rule.
+        guide = EpgGuide(now=now)
         profiles = [
-            p.process(chunk_size=chunk_size, all_streams=all_streams, accounts=accounts)
+            p.process(
+                chunk_size=chunk_size,
+                all_streams=all_streams,
+                accounts=accounts,
+                guide=guide,
+            )
             for p in self._profiles
         ]
         warnings = [

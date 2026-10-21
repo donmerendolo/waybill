@@ -17,6 +17,7 @@ from .src.types.config import WaybillConfig
 from .src.pipeline import WaybillPipeline
 from .src.plan import WaybillPlanFormatter
 from .src.apply import WaybillApplier
+from .src import scheduler
 
 
 class WaybillError(Exception):
@@ -60,8 +61,26 @@ class Plugin(DispatcharrPlugin):
             fields=plugin.fields,
             actions=plugin.actions,
         )
+        self._plugin_key = os.path.basename(plugin_dir)
+        self._start_scheduler()
 
         return None
+
+    def _start_scheduler(self) -> None:
+        """Start the auto-apply timer when running inside Dispatcharr.
+
+        Also called on every action, so the timer comes back if the process
+        that ran it has exited.
+        """
+        try:
+            import apps.plugins.loader  # noqa: F401  (only present in Dispatcharr)
+        except ImportError:
+            return
+        scheduler.ensure_running(self._plugin_key)
+
+    def stop(self, context: Any = None) -> None:
+        """Called by Dispatcharr when the plugin is disabled, deleted or reloaded."""
+        scheduler.stop()
 
     def _load_manifest(self, path: str) -> DispatcharrPlugin:
         with open(path, "r", encoding="utf-8") as f:
@@ -180,9 +199,11 @@ class Plugin(DispatcharrPlugin):
                 f"Validation failed: {fail_count} fail violation(s) detected — database not modified"
             )
         applier = WaybillApplier(plan, mode, logger)
-        applier.apply()
+        with scheduler.apply_lock():
+            applier.apply()
 
     def run(self, action: str, params: dict[str, Any], context: dict[str, Any]) -> None:
+        self._start_scheduler()
         self._load_configuration(context)
         logger = self._require_logger(context)
 

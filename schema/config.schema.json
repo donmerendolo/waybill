@@ -133,6 +133,17 @@
         "keepEmptyChannels": {
           "type": "boolean",
           "description": "When true, a member that matches no streams still produces a channel (named after the member). Apply keeps it disabled in the profile with no streams and leaves its number, logo and EPG untouched, re-enabling it once streams match"
+        },
+        "epgSchedule": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConfigEpgSchedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Enable each channel only around EPG programmes that match; inherited by groups and members"
         }
       },
       "additionalProperties": false
@@ -198,6 +209,17 @@
           "additionalProperties": {
             "$ref": "#/$defs/ConfigVariable"
           }
+        },
+        "epgSchedule": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConfigEpgSchedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "epgSchedule override for this group; false clears the profile's rule"
         }
       },
       "required": [
@@ -294,6 +316,17 @@
             "type": "integer"
           },
           "description": "Map of stream URL fragment (e.g. an AceStream id) or stream hash to integer priority (default 0). A key matches a stream whose URL contains it or whose stream hash equals it; the first matching key in manifest order wins. Streams are ordered by priority, highest first, then by orderStreamsBy within the same priority. Keys that match nothing are reported in the plan"
+        },
+        "epgSchedule": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConfigEpgSchedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "epgSchedule override for this member; false clears the inherited rule"
         }
       },
       "required": [
@@ -530,6 +563,43 @@
             "number",
             "boolean"
           ]
+        }
+      ]
+    },
+    "ConfigEpgSchedule": {
+      "description": "Enable the channel only around EPG programmes that match: from 'before' ahead of a matching programme's start until 'after' past its end. false clears an inherited rule",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "before": {
+              "type": [
+                "integer",
+                "string"
+              ],
+              "pattern": "^\\s*(\\d+\\s*h)?\\s*(\\d+\\s*m(in)?)?\\s*$",
+              "description": "How long before a matching programme starts the channel is enabled: minutes, or e.g. 30m, 1h30m (default 0)"
+            },
+            "after": {
+              "type": [
+                "integer",
+                "string"
+              ],
+              "pattern": "^\\s*(\\d+\\s*h)?\\s*(\\d+\\s*m(in)?)?\\s*$",
+              "description": "How long after a matching programme ends the channel stays enabled (default 0)"
+            },
+            "matchers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ConfigMatcher"
+              },
+              "description": "Which programmes count; every matcher must accept it. Fields: name/title (default), sub_title, description. No matchers: any programme counts"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "const": false
         }
       ]
     }
