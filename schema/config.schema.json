@@ -143,7 +143,7 @@
               "type": "null"
             }
           ],
-          "description": "Switch each channel on or off around EPG programmes that match; inherited by groups and members"
+          "description": "Enable each channel only around the EPG programmes it is for; inherited by groups and members"
         }
       },
       "additionalProperties": false
@@ -567,7 +567,7 @@
       ]
     },
     "ConfigEpgSchedule": {
-      "description": "Switch the channel on (action keep) or off (action drop) around EPG programmes that match: from 'before' ahead of a matching programme's start until 'after' past its end. false clears an inherited rule",
+      "description": "Enable the channel only around the EPG programmes it is for: those that match (action keep) or those that do not (action drop), from 'before' ahead of their start until 'after' past their end. false clears an inherited rule",
       "oneOf": [
         {
           "type": "object",
@@ -578,7 +578,7 @@
                 "keep",
                 "drop"
               ],
-              "description": "keep (default): enable the channel only while a matching programme is near; drop: disable it while one is near"
+              "description": "keep (default): programmes that match turn the channel on; drop: programmes that do not match do (matchers describe what to discard, e.g. filler)"
             },
             "before": {
               "type": [
@@ -586,7 +586,7 @@
                 "string"
               ],
               "pattern": "^\\s*(\\d+\\s*h)?\\s*(\\d+\\s*m(in)?)?\\s*$",
-              "description": "How long before a matching programme starts the rule takes effect: minutes, or e.g. 30m, 1h30m (default 0)"
+              "description": "How long before such a programme starts the channel is enabled: minutes, or e.g. 30m, 1h30m (default 0)"
             },
             "after": {
               "type": [
@@ -594,7 +594,7 @@
                 "string"
               ],
               "pattern": "^\\s*(\\d+\\s*h)?\\s*(\\d+\\s*m(in)?)?\\s*$",
-              "description": "How long after a matching programme ends the rule still applies (default 0)"
+              "description": "How long after such a programme ends the channel stays enabled (default 0)"
             },
             "matchers": {
               "type": "array",

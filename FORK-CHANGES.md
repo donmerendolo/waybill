@@ -23,7 +23,7 @@ version 1.5.0 (commit `cabc873`). Everything below was added in this fork; the
 | `streamPriorities` | member | Integer priority per feed, keyed by URL or stream hash (not by name). Higher goes first; negative sends unreliable feeds to the end. |
 | `m3uOrder` | profile, group, member | Ranks M3U accounts by name, to prefer one provider's copy of a channel. |
 | `orderStreamsBy` | profile, group, member | Now also accepts a list of criteria (`priority`, `quality`, `m3u`) applied in order, e.g. `[priority, quality, m3u]`. The old single value `quality` still works. |
-| `epgSchedule` | profile, group, member | Disables a channel while an EPG programme that matches is on (`action: drop`, e.g. filler), or enables it only then (`action: keep`, e.g. live events). Matchers read title, sub-title and description; `before`/`after` widen the window. |
+| `epgSchedule` | profile, group, member | Enables a channel only around the EPG programmes it is for, and disables it otherwise: those that match (`action: keep`, e.g. live events) or those that do not (`action: drop`, matchers describe filler). Matchers read title, sub-title and description; `before`/`after` add margins around those programmes. |
 
 New plugin setting: **Auto-apply every (minutes)** runs Apply on a timer, so `epgSchedule` follows the guide without an external scheduler.
 

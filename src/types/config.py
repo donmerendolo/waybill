@@ -455,13 +455,13 @@ def _to_minutes(raw: Any, where: str, key: str) -> int:
 
 @dataclass(frozen=True)
 class ConfigEpgSchedule:
-    """epgSchedule: switch a channel on or off around EPG programmes that match.
+    """epgSchedule: enable a channel only around the programmes it is for.
 
-    A programme counts when every matcher accepts it (no matchers: any
-    programme). It is "near" from `before` minutes before it starts until
-    `after` minutes after it ends. With action keep the channel is enabled only
-    while a counting programme is near; with action drop it is disabled while
-    one is near and enabled otherwise.
+    A programme matches when every matcher accepts it (no matchers: any
+    programme). With action keep the matching programmes turn the channel on;
+    with action drop the non-matching ones do (e.g. matchers describe filler).
+    The channel is enabled from `before` minutes before such a programme starts
+    until `after` minutes after it ends, and disabled otherwise.
     `active` is False for `epgSchedule: false`, which clears an inherited rule.
     """
 
