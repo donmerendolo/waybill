@@ -1,4 +1,4 @@
-"""epgSchedule: enable a channel only around the EPG programmes it is for.
+"""epgSchedule: switch a channel on or off around the EPG programmes that match.
 
 The guide is read from Dispatcharr's EPG tables (EPGData / ProgramData). A
 programme "counts" when every matcher of the rule accepts it; matchers see a
@@ -6,9 +6,11 @@ programme as an object with these fields:
 
     name / title, sub_title, description
 
-so the default matcher field ("name") means the programme title. The channel is
-enabled while now falls between `before` minutes ahead of a counting
-programme's start and `after` minutes past its end.
+so the default matcher field ("name") means the programme title. A counting
+programme is "near" while now falls between `before` minutes ahead of its start
+and `after` minutes past its end. With action keep (default) the channel is
+enabled only while one is near; with action drop it is disabled while one is
+near.
 
 When the guide has nothing to decide on (no EPG id, no EPG entry, or a guide
 with no programme still to end, e.g. a source that stopped refreshing), the
@@ -88,7 +90,9 @@ class EpgGuide:
             self._has_guide[tvg_id] = self._load_has_guide(tvg_id)
         return self._has_guide[tvg_id]
 
-    def programmes(self, tvg_id: str, start: datetime, end: datetime) -> list[Programme]:
+    def programmes(
+        self, tvg_id: str, start: datetime, end: datetime
+    ) -> list[Programme]:
         """Programmes of the EPG entry for *tvg_id* overlapping [start, end], by start."""
         key = (tvg_id, start, end)
         if key not in self._windows:
@@ -143,6 +147,7 @@ def evaluate(
 ) -> ScheduleDecision:
     """Decide whether a channel with EPG id *epg_id* is enabled right now."""
     from .matchers import build_matcher
+    from .types.config import MatcherAction
 
     if not epg_id:
         return ScheduleDecision(True, "no EPG id, left enabled")
@@ -153,11 +158,15 @@ def evaluate(
     window_start = guide.now - timedelta(minutes=rule.after)
     window_end = guide.now + timedelta(minutes=rule.before)
     matchers = [build_matcher(m) for m in rule.matchers]
+    keep = rule.action is MatcherAction.KEEP
     for programme in guide.programmes(epg_id, window_start, window_end):
         if all(m.match(programme) for m in matchers):
+            # keep: a matching programme switches the channel on; drop: off.
             return ScheduleDecision(
-                True,
-                f'on: "{programme.title}" '
+                keep,
+                f'{"on" if keep else "off"}: "{programme.title}" '
                 f"{_clock(programme.start, '%a %H:%M')}-{_clock(programme.end)}",
             )
-    return ScheduleDecision(False, "off: no matching programme")
+    return ScheduleDecision(
+        not keep, f"{'off' if keep else 'on'}: no matching programme"
+    )

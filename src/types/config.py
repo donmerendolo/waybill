@@ -455,17 +455,20 @@ def _to_minutes(raw: Any, where: str, key: str) -> int:
 
 @dataclass(frozen=True)
 class ConfigEpgSchedule:
-    """epgSchedule: enable a channel only around EPG programmes that match.
+    """epgSchedule: switch a channel on or off around EPG programmes that match.
 
     A programme counts when every matcher accepts it (no matchers: any
-    programme). The channel is enabled from `before` minutes before a counting
-    programme starts until `after` minutes after it ends, and disabled otherwise.
+    programme). It is "near" from `before` minutes before it starts until
+    `after` minutes after it ends. With action keep the channel is enabled only
+    while a counting programme is near; with action drop it is disabled while
+    one is near and enabled otherwise.
     `active` is False for `epgSchedule: false`, which clears an inherited rule.
     """
 
     before: int = 0
     after: int = 0
     matchers: tuple[ConfigMatcher, ...] = ()
+    action: MatcherAction = MatcherAction.KEEP
     active: bool = True
 
 
@@ -481,7 +484,7 @@ def _to_epg_schedule(raw: Any, where: str) -> "ConfigEpgSchedule | None":
     if isinstance(raw, ConfigEpgSchedule):
         return raw
     item = _require_mapping(raw, f"{where} epgSchedule")
-    unknown = set(item) - {"before", "after", "matchers"}
+    unknown = set(item) - {"action", "before", "after", "matchers"}
     if unknown:
         raise ValueError(
             f"{where} epgSchedule has unknown keys: {', '.join(sorted(map(str, unknown)))}"
@@ -497,7 +500,15 @@ def _to_epg_schedule(raw: Any, where: str) -> "ConfigEpgSchedule | None":
         )
         for i, m in enumerate(cast(list[Any], raw_matchers), 1)
     )
+    raw_action = item.get("action") or MatcherAction.KEEP.value
+    try:
+        action = MatcherAction(str(raw_action))
+    except ValueError:
+        raise ValueError(
+            f"{where} epgSchedule action must be keep or drop, got {raw_action!r}"
+        ) from None
     return ConfigEpgSchedule(
+        action=action,
         before=_to_minutes(item.get("before"), f"{where} epgSchedule", "before"),
         after=_to_minutes(item.get("after"), f"{where} epgSchedule", "after"),
         matchers=matchers,

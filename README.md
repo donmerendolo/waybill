@@ -176,28 +176,39 @@ By default a member that matches no streams produces no channel. Set `keepEmptyC
 
 ### Enabling channels by EPG schedule
 
-`epgSchedule` enables a channel only around the guide programmes it is for, and disables it in the profile the rest of the time. Useful for event channels (DAZN F1, a match feed) that show filler between events. Waybill reads the programmes from Dispatcharr's EPG (the entry the channel's EPG id points to) each time it plans or applies:
+`epgSchedule` switches a channel on or off in its profile depending on what the guide says it is airing. Waybill reads the programmes from Dispatcharr's EPG (the entry the channel's EPG id points to) each time it plans or applies.
+
+With `action: drop`, the channel is **disabled while a programme that matches is near**, and enabled the rest of the time. Use it to hide a channel while it shows filler:
+
+```yaml
+- name: DAZN 1
+  epgSchedule:
+    action: drop
+    matchers:            # which programmes switch the channel off
+      - type: containsAny
+        substrings: ["Disfruta de DAZN", "Programa por determinar"]
+```
+
+With `action: keep` (the default), it is the other way round: the channel is **enabled only while a programme that matches is near**. Use it for event channels that only matter during live events:
 
 ```yaml
 - name: DAZN F1
   epgSchedule:
-    before: 30m          # enable 30 minutes before a matching programme starts
-    after: 15m           # keep enabled until 15 minutes after it ends
-    matchers:            # which programmes count: every matcher must accept it
-      - type: containsAny
-        substrings: ["Fórmula 1", "F1"]
-      - type: containsAny
-        action: drop
-        substrings: ["Resumen", "Previo"]
+    before: 15m          # switch on 15 minutes before a matching programme starts
+    after: 15m           # and keep it on until 15 minutes after it ends
+    matchers:
+      - type: hasPrefix
+        prefixes: ["DIRECTO"]
 ```
 
 How a channel is decided, at the moment of the plan or apply:
 
-1. Programmes of the channel's EPG entry are checked against the `matchers`, the same matcher types as for streams (with pre-transformers too). They read these programme fields: `name` (the title, and the default), `title`, `sub_title` and `description`. Without `matchers`, any programme counts.
-2. The channel is **enabled** if a programme that counts starts within `before` from now, is airing, or ended less than `after` ago. Otherwise it is **disabled** in the profile. It keeps its streams, number, logo and EPG either way.
-3. If there is nothing to decide on, the channel is left enabled and the plan says why. This covers a channel with no EPG id or EPG entry, and a guide with no programme still to end (e.g. an EPG source that stopped refreshing). A broken guide never switches a lineup off.
+1. Programmes of the channel's EPG entry are checked against the `matchers`, the same matcher types as for streams (with pre-transformers too). They read these programme fields: `name` (the title, and the default), `title`, `sub_title` and `description`. A programme matches when every matcher accepts it; without `matchers`, any programme matches.
+2. A matching programme is **near** from `before` ahead of its start until `after` past its end. `before` and `after` take minutes (`45`) or a duration (`30m`, `2h`, `1h30m`); both default to 0, i.e. only while it airs.
+3. `keep`: enabled if a matching programme is near, disabled otherwise. `drop`: disabled if a matching programme is near, enabled otherwise. Either way the channel keeps its streams, number, logo and EPG.
+4. If there is nothing to decide on, the channel is left enabled and the plan says why. This covers a channel with no EPG id or EPG entry, and a guide with no programme still to end (e.g. an EPG source that stopped refreshing). A broken guide never switches a lineup off.
 
-`before` and `after` take minutes (`45`) or a duration (`30m`, `2h`, `1h30m`); both default to 0. Like `streamProfile`, `epgSchedule` can be set on a profile, a group or a member, and the most specific one applies; `epgSchedule: false` clears an inherited rule. Channels kept by `keepEmptyChannels` stay disabled regardless. The plan shows the decision under each channel, e.g. `Schedule: on: "Fórmula 1: GP de México" Sun 20:00-22:00`, or `— disabled by epgSchedule`.
+Like `streamProfile`, `epgSchedule` can be set on a profile, a group or a member, and the most specific one applies; `epgSchedule: false` clears an inherited rule. Channels kept by `keepEmptyChannels` stay disabled regardless. The plan shows the decision under each channel, e.g. `Schedule: off: "Disfruta de DAZN en Movistar Plus" Wed 02:00-06:00` (with `— disabled by epgSchedule` next to the channel) or `Schedule: on: no matching programme`.
 
 The schedule only changes when Waybill runs, so run Apply regularly: set **Auto-apply every (minutes)** in the plugin settings (e.g. `5`; `0`, the default, turns it off), or call Dispatcharr's API (`POST /api/plugins/plugins/<key>/run/` with `{"action": "apply"}`) from a scheduler of your own. The timer runs in one Dispatcharr process; it re-reads the setting on each tick, so changes need no restart, and it never runs two applies at once.
 

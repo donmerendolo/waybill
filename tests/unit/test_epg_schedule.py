@@ -39,7 +39,9 @@ class _Guide(EpgGuide):
 
     def _load_window(self, tvg_id, start, end):
         self.queries.append(tvg_id)
-        return [p for p in self._guide.get(tvg_id, []) if p.start <= end and p.end >= start]
+        return [
+            p for p in self._guide.get(tvg_id, []) if p.start <= end and p.end >= start
+        ]
 
 
 def _prog(title: str, start_h: float, end_h: float, **kw: str) -> Programme:
@@ -93,6 +95,12 @@ class TestConfig:
     def test_absent_inherits(self) -> None:
         assert _to_epg_schedule(None, "x") is None
 
+    def test_action(self) -> None:
+        assert _rule().action.value == "keep"
+        assert _rule(action="drop").action.value == "drop"
+        with pytest.raises(ValueError, match="keep or drop"):
+            _rule(action="disable")
+
     def test_unknown_key(self) -> None:
         with pytest.raises(ValueError, match="unknown keys: start"):
             _rule(start="1h")
@@ -136,7 +144,9 @@ class TestEvaluate:
     def test_on_inside_after_window(self) -> None:
         # The race ended 30 min ago; "after: 30m" keeps the channel on until now.
         day = [_prog("Fórmula 1: GP", -2, -0.5), _prog("Programación", -0.5, 3)]
-        assert evaluate(_rule(after="30m", matchers=self.F1), _Guide({"F1": day}), "F1").enabled
+        assert evaluate(
+            _rule(after="30m", matchers=self.F1), _Guide({"F1": day}), "F1"
+        ).enabled
         assert not evaluate(
             _rule(after="29m", matchers=self.F1), _Guide({"F1": day}), "F1"
         ).enabled
@@ -153,7 +163,13 @@ class TestEvaluate:
 
     def test_matchers_see_other_fields(self) -> None:
         rule = _rule(
-            matchers=[{"type": "containsAny", "field": "description", "substrings": ["directo"]}]
+            matchers=[
+                {
+                    "type": "containsAny",
+                    "field": "description",
+                    "substrings": ["directo"],
+                }
+            ]
         )
         guide = _Guide({"X": [_prog("Fútbol", -1, 1, description="En directo")]})
         assert evaluate(rule, guide, "X").enabled
@@ -168,7 +184,11 @@ class TestEvaluate:
             ({}, None, "no EPG id, left enabled"),
             ({}, "F1", 'no guide data for "F1", left enabled'),
             # The guide ran out: its last programme ended an hour ago.
-            ({"F1": [_prog("Fórmula 1", -3, -1)]}, "F1", 'no guide data for "F1", left enabled'),
+            (
+                {"F1": [_prog("Fórmula 1", -3, -1)]},
+                "F1",
+                'no guide data for "F1", left enabled',
+            ),
         ],
     )
     def test_missing_guide_leaves_enabled(self, guide, epg_id, reason) -> None:
@@ -182,6 +202,44 @@ class TestEvaluate:
         evaluate(rule, guide, "F1")
         evaluate(rule, guide, "F1")
         assert len(guide.queries) == 2  # one guide check, one window
+
+
+class TestEvaluateDrop:
+    """action: drop switches the channel off while a matching programme is near."""
+
+    FILLER = [
+        {"type": "containsAny", "substrings": ["Disfruta de DAZN", "Programación"]}
+    ]
+
+    def test_off_during_filler(self) -> None:
+        decision = evaluate(
+            _rule(action="drop", matchers=self.FILLER), _Guide({"F1": F1_DAY}), "F1"
+        )
+        assert not decision.enabled
+        assert decision.reason.startswith('off: "Programación"')
+
+    def test_on_during_real_programme(self) -> None:
+        guide = _Guide(
+            {"F1": [_prog("Fórmula 1: GP", -1, 1), _prog("Programación", 1, 4)]}
+        )
+        decision = evaluate(_rule(action="drop", matchers=self.FILLER), guide, "F1")
+        assert decision.enabled
+        assert decision.reason == "on: no matching programme"
+
+    def test_before_switches_off_ahead_of_filler(self) -> None:
+        guide = _Guide(
+            {"F1": [_prog("Fórmula 1: GP", -1, 0.5), _prog("Programación", 0.5, 4)]}
+        )
+        rule = _rule(action="drop", before="30m", matchers=self.FILLER)
+        assert not evaluate(rule, guide, "F1").enabled
+        rule = _rule(action="drop", before="29m", matchers=self.FILLER)
+        assert evaluate(rule, _Guide({"F1": guide._guide["F1"]}), "F1").enabled
+
+    def test_missing_guide_still_leaves_enabled(self) -> None:
+        decision = evaluate(
+            _rule(action="drop", matchers=self.FILLER), _Guide({}), "F1"
+        )
+        assert decision.enabled
 
 
 class TestPlan:
@@ -251,7 +309,10 @@ class TestPlan:
 
     def test_formatter_shows_schedule(self) -> None:
         channel = ChannelPlan(
-            name="DAZN F1", epg_id="F1", enabled=False, schedule="off: no matching programme"
+            name="DAZN F1",
+            epg_id="F1",
+            enabled=False,
+            schedule="off: no matching programme",
         )
         plan = WaybillPlan(
             manifest_name="m",
@@ -263,7 +324,9 @@ class TestPlan:
                         GroupPlan(
                             key="dazn",
                             name="DAZN",
-                            members=[MemberPlan(member_name="DAZN F1", channels=[channel])],
+                            members=[
+                                MemberPlan(member_name="DAZN F1", channels=[channel])
+                            ],
                         )
                     ],
                 )
