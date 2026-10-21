@@ -274,8 +274,14 @@ class TestChannelLogo:
         }
         if channel is not None:
             models["Channel"] = SimpleNamespace(objects=_ApplyChannelManager(channel))
+            memberships: list[dict] = []
             models["ChannelProfileMembership"] = SimpleNamespace(
-                objects=SimpleNamespace(update_or_create=lambda **kw: (None, False))
+                objects=SimpleNamespace(
+                    update_or_create=lambda **kw: (
+                        memberships.append(kw) or (None, False)
+                    )
+                ),
+                calls=memberships,
             )
             stream_manager = _ApplyChannelStreamManager()
             models["ChannelStream"] = type(
@@ -306,15 +312,16 @@ class TestChannelLogo:
         assert applier._resolve_channel_logo(None, epg, "X") is None
         assert applier._resolve_channel_logo(None, None, "X") is None
 
-    def _apply(self, monkeypatch, epg_entries, current_logo_id):
+    def _apply(self, monkeypatch, epg_entries, current_logo_id, **plan_fields):
         channel = _ExistingChannel(logo_id=current_logo_id)
         module, logos = self._load(monkeypatch, epg_entries, channel=channel)
         channel_plan = ChannelPlan(
-            name="DAZN F1", epg_id="DAZN F1 HD", channel_number=1
+            name="DAZN F1", epg_id="DAZN F1 HD", channel_number=1, **plan_fields
         )
         _applier(module)._apply_channel(
             channel_plan, SimpleNamespace(name="DAZN"), None
         )
+        self.memberships = module.ChannelProfileMembership.calls
         return channel, logos
 
     def test_apply_keeps_existing_logo_when_nothing_provides_one(
@@ -336,3 +343,23 @@ class TestChannelLogo:
 
 def _channel_stream_init(self, **kwargs: object) -> None:
     self.__dict__.update(kwargs)
+
+
+class TestEpgScheduleApply(TestChannelLogo):
+    """The profile membership follows the plan's epgSchedule decision."""
+
+    EPG = [SimpleNamespace(pk=1, tvg_id="DAZN F1 HD", name="DAZN F1", icon_url="")]
+
+    def test_disabled_channel_is_disabled_in_profile(self, monkeypatch) -> None:
+        self._apply(
+            monkeypatch,
+            self.EPG,
+            1,
+            enabled=False,
+            schedule="off: no matching programme",
+        )
+        assert [m["defaults"] for m in self.memberships] == [{"enabled": False}]
+
+    def test_enabled_by_default(self, monkeypatch) -> None:
+        self._apply(monkeypatch, self.EPG, 1)
+        assert [m["defaults"] for m in self.memberships] == [{"enabled": True}]

@@ -160,11 +160,12 @@ class WaybillPlanFormatter:
                     for channel in member.channels:
                         stream_count = len(channel.streams)
                         total_channels += 1
-                        suffix = (
-                            "  — no streams, kept disabled"
-                            if channel.placeholder
-                            else ""
-                        )
+                        if channel.placeholder:
+                            suffix = "  — no streams, kept disabled"
+                        elif not channel.enabled:
+                            suffix = "  — disabled by epgSchedule"
+                        else:
+                            suffix = ""
                         lines.append(
                             f"      Channel: {channel.name}  ({stream_count} stream(s)){suffix}"
                         )
@@ -172,6 +173,8 @@ class WaybillPlanFormatter:
                             lines.append(f"        Number: {channel.channel_number}")
                         if channel.epg_id:
                             lines.append(f"        EPG-ID: {channel.epg_id}")
+                        if channel.schedule:
+                            lines.append(f"        Schedule: {channel.schedule}")
                         if channel.logo_url:
                             lines.append(f"        Logo:   {channel.logo_url}")
                         if channel.stream_profile:

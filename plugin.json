@@ -1,7 +1,7 @@
 {
   "name": "waybill",
   "display_name": "Waybill",
-  "version": "1.14.1",
+  "version": "1.15.0",
   "license": "GPL-3.0-only",
   "min_dispatcharr_version": "0.31.0",
   "description": "A Dispatcharr plugin for managing channel configurations using Waybill manifests",
@@ -18,6 +18,13 @@
         { "label": "Upsert (add/update only)", "value": "upsert" },
         { "label": "Overwrite (delete channels not in manifest)", "value": "overwrite" }
       ]
+    },
+    {
+      "id": "auto_apply_minutes",
+      "label": "Auto-apply every (minutes)",
+      "type": "number",
+      "default": 0,
+      "description": "Run Apply on a timer, so epgSchedule rules follow the guide. 0 turns it off."
     }
   ],
   "actions": [
