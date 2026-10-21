@@ -6,11 +6,11 @@ programme as an object with these fields:
 
     name / title, sub_title, description
 
-so the default matcher field ("name") means the programme title. A counting
-programme is "near" while now falls between `before` minutes ahead of its start
-and `after` minutes past its end. With action keep (default) the channel is
-enabled only while one is near; with action drop it is disabled while one is
-near.
+so the default matcher field ("name") means the programme title. With action
+keep (default) the programmes that match turn the channel on; with action drop
+the ones that do not match do (e.g. anything but filler). The channel is
+enabled while now falls between `before` minutes ahead of such a programme's
+start and `after` minutes past its end, and disabled otherwise.
 
 When the guide has nothing to decide on (no EPG id, no EPG entry, or a guide
 with no programme still to end, e.g. a source that stopped refreshing), the
@@ -153,20 +153,27 @@ def evaluate(
         return ScheduleDecision(True, "no EPG id, left enabled")
     if not guide.has_guide(epg_id):
         return ScheduleDecision(True, f'no guide data for "{epg_id}", left enabled')
-    # A programme counts while now is in [start - before, end + after], i.e. it
-    # starts by now + before and ends no earlier than now - after.
+    # The channel is on while now is in [start - before, end + after] of a
+    # programme that turns it on: one that matches (keep) or one that does not
+    # (drop). That programme starts by now + before and ends no earlier than
+    # now - after, so the margins always widen the time around real programmes.
     window_start = guide.now - timedelta(minutes=rule.after)
     window_end = guide.now + timedelta(minutes=rule.before)
     matchers = [build_matcher(m) for m in rule.matchers]
     keep = rule.action is MatcherAction.KEEP
     for programme in guide.programmes(epg_id, window_start, window_end):
-        if all(m.match(programme) for m in matchers):
-            # keep: a matching programme switches the channel on; drop: off.
-            return ScheduleDecision(
-                keep,
-                f'{"on" if keep else "off"}: "{programme.title}" '
-                f"{_clock(programme.start, '%a %H:%M')}-{_clock(programme.end)}",
-            )
+        if all(m.match(programme) for m in matchers) == keep:
+            return ScheduleDecision(True, f"on: {_describe(programme)}")
+    if keep:
+        return ScheduleDecision(False, "off: no matching programme")
+    airing = guide.programmes(epg_id, guide.now, guide.now)
     return ScheduleDecision(
-        not keep, f"{'off' if keep else 'on'}: no matching programme"
+        False, f"off: {_describe(airing[0])}" if airing else "off: nothing airing"
+    )
+
+
+def _describe(programme: Programme) -> str:
+    return (
+        f'"{programme.title}" '
+        f"{_clock(programme.start, '%a %H:%M')}-{_clock(programme.end)}"
     )

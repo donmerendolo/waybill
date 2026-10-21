@@ -127,7 +127,7 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
     ),
     (ConfigProfile, "groups"): "Map of group key \u2192 ConfigGroup",
     (ConfigProfile, "epg_schedule"): (
-        "Switch each channel on or off around EPG programmes that match; inherited "
+        "Enable each channel only around the EPG programmes it is for; inherited "
         "by groups and members"
     ),
     (ConfigGroup, "epg_schedule"): (
@@ -453,9 +453,10 @@ def build_schema() -> dict[str, Any]:
     }
     defs["ConfigEpgSchedule"] = {
         "description": (
-            "Switch the channel on (action keep) or off (action drop) around EPG "
-            "programmes that match: from 'before' ahead of a matching programme's "
-            "start until 'after' past its end. false clears an inherited rule"
+            "Enable the channel only around the EPG programmes it is for: those that "
+            "match (action keep) or those that do not (action drop), from 'before' "
+            "ahead of their start until 'after' past their end. false clears an "
+            "inherited rule"
         ),
         "oneOf": [
             {
@@ -465,22 +466,23 @@ def build_schema() -> dict[str, Any]:
                         "type": "string",
                         "enum": ["keep", "drop"],
                         "description": (
-                            "keep (default): enable the channel only while a matching "
-                            "programme is near; drop: disable it while one is near"
+                            "keep (default): programmes that match turn the channel "
+                            "on; drop: programmes that do not match do (matchers "
+                            "describe what to discard, e.g. filler)"
                         ),
                     },
                     "before": {
                         **duration,
                         "description": (
-                            "How long before a matching programme starts the rule "
-                            "takes effect: minutes, or e.g. 30m, 1h30m (default 0)"
+                            "How long before such a programme starts the channel is "
+                            "enabled: minutes, or e.g. 30m, 1h30m (default 0)"
                         ),
                     },
                     "after": {
                         **duration,
                         "description": (
-                            "How long after a matching programme ends the rule "
-                            "still applies (default 0)"
+                            "How long after such a programme ends the channel stays "
+                            "enabled (default 0)"
                         ),
                     },
                     "matchers": {

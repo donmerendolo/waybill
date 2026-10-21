@@ -205,7 +205,8 @@ class TestEvaluate:
 
 
 class TestEvaluateDrop:
-    """action: drop switches the channel off while a matching programme is near."""
+    """action: drop - programmes that do NOT match (e.g. not filler) turn the
+    channel on, and before/after widen the time around them."""
 
     FILLER = [
         {"type": "containsAny", "substrings": ["Disfruta de DAZN", "Programación"]}
@@ -224,16 +225,26 @@ class TestEvaluateDrop:
         )
         decision = evaluate(_rule(action="drop", matchers=self.FILLER), guide, "F1")
         assert decision.enabled
-        assert decision.reason == "on: no matching programme"
+        assert decision.reason.startswith('on: "Fórmula 1: GP"')
 
-    def test_before_switches_off_ahead_of_filler(self) -> None:
-        guide = _Guide(
-            {"F1": [_prog("Fórmula 1: GP", -1, 0.5), _prog("Programación", 0.5, 4)]}
-        )
-        rule = _rule(action="drop", before="30m", matchers=self.FILLER)
-        assert not evaluate(rule, guide, "F1").enabled
-        rule = _rule(action="drop", before="29m", matchers=self.FILLER)
-        assert evaluate(rule, _Guide({"F1": guide._guide["F1"]}), "F1").enabled
+    def test_before_switches_on_ahead_of_real_programme(self) -> None:
+        # Filler until +1h, then the race: "before: 1h" switches it on now.
+        rule = _rule(action="drop", before="1h", matchers=self.FILLER)
+        assert evaluate(rule, _Guide({"F1": F1_DAY}), "F1").enabled
+        rule = _rule(action="drop", before="59m", matchers=self.FILLER)
+        assert not evaluate(rule, _Guide({"F1": F1_DAY}), "F1").enabled
+
+    def test_after_keeps_on_past_real_programme(self) -> None:
+        day = [_prog("Fórmula 1: GP", -2, -0.25), _prog("Programación", -0.25, 3)]
+        rule = _rule(action="drop", after="15m", matchers=self.FILLER)
+        assert evaluate(rule, _Guide({"F1": day}), "F1").enabled
+        rule = _rule(action="drop", after="14m", matchers=self.FILLER)
+        assert not evaluate(rule, _Guide({"F1": day}), "F1").enabled
+
+    def test_gap_in_guide_is_off(self) -> None:
+        guide = _Guide({"F1": [_prog("Fórmula 1: GP", 2, 4)]})
+        decision = evaluate(_rule(action="drop", matchers=self.FILLER), guide, "F1")
+        assert (decision.enabled, decision.reason) == (False, "off: nothing airing")
 
     def test_missing_guide_still_leaves_enabled(self) -> None:
         decision = evaluate(
