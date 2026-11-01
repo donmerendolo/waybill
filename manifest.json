@@ -11,11 +11,11 @@
         "author": "@Matthew-Beckett",
         "license": "GPL-3.0-only",
         "repo_url": "https://github.com/donmerendolo/waybill",
-        "last_updated": "2026-11-01T02:07:09Z",
-        "latest_version": "1.16.0",
-        "latest_url": "v1.16.0/waybill.zip",
-        "latest_sha256": "f2ea6efe227f64ad9c02d57ec16a1ac585bc8d890f17b49bacfba1318e97167a",
-        "latest_md5": "81ff79cd35cfeb2e103259790c5c61b8",
+        "last_updated": "2026-11-01T02:14:41Z",
+        "latest_version": "1.17.0",
+        "latest_url": "v1.17.0/waybill.zip",
+        "latest_sha256": "5ca7b1225b86bd80dba930c48fb949f08f51ac0c00cb66f38c57d7541edbe0c2",
+        "latest_md5": "4fa823ba7f03126948050a701f0eaaa2",
         "latest_size": 436,
         "min_dispatcharr_version": "0.31.0"
       }
