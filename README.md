@@ -174,6 +174,51 @@ Criteria you leave out are not used. Like `streamProfile`, it can be set on a pr
 
 By default a member that matches no streams produces no channel. Set `keepEmptyChannels: true` on a profile to keep it instead: the channel (named after the member) stays in Dispatcharr, apply removes its streams and **disables** it in the profile, and its number, logo and EPG are left untouched. The next apply that finds matching streams again fills it in and re-enables it. The plan marks these channels as `no streams, kept disabled`.
 
+### Enabling channels per profile
+
+Every channel Waybill manages is a member of its profile, enabled or disabled there. A disabled channel stays fully managed (streams, number, logo, EPG); clients of that profile just do not get it. Three settings decide it:
+
+- `enabled: false` on a member or a group disables those channels. A member's own `enabled` overrides its group's (`enabled: true` re-enables one channel of a disabled group).
+- `tags` on a member or a group label channels; a member has its own tags, its group's, and the **group key** as a tag.
+- On the profile, `excludeTags` disables every channel with any of those tags, and `includeTags`, when set, keeps only channels with one of them enabled. Tag rules apply after `enabled`: `enabled: true` does not override them.
+
+```yaml
+profiles:
+  todo:
+    excludeTags: [tdt]          # free-to-air channels: watch them on normal TV
+    groups:
+      generalistas:
+        name: Generalistas
+        tags: [tdt]
+        members: [...]
+      deportes:
+        name: Deportes
+        members:
+          - name: Teledeporte
+            tags: [tdt]
+            ...
+```
+
+To have several profiles over the same channels, write the channels once and start other profiles `from` it. `from: <profile key>` copies that profile's settings and groups, and the keys you set replace the copied ones (`name` is not copied). Each profile then decides what is enabled in it:
+
+```yaml
+profiles:
+  todo:
+    name: Todo
+    excludeTags: [tdt]
+    groups: {...}
+  tdt:
+    from: todo                  # same channels, numbers, matchers...
+    name: Con TDT
+    excludeTags: []             # ...but the free-to-air ones enabled
+  deportes:
+    from: todo
+    name: Solo deportes
+    includeTags: [dazn, movistar_deportes, deportes]   # group keys are tags
+```
+
+Each profile becomes a Dispatcharr channel profile with the same key; the channels themselves are shared. A disabled channel shows in the plan as `— disabled in this profile (excludeTags: tdt)`. `epgSchedule` only applies to channels the profile keeps enabled.
+
 ### Enabling channels by EPG schedule
 
 `epgSchedule` enables a channel in its profile only around the guide programmes it is for, and disables it the rest of the time. Waybill reads the programmes from Dispatcharr's EPG (the entry the channel's EPG id points to) each time it plans or applies.
@@ -618,7 +663,7 @@ On every apply, Waybill also:
 
 - Creates missing channel profiles **empty**. Only channels declared in the manifest are enabled in them; other existing channels are not auto-added as enabled.
 - Replaces each channel's stream list with the planned streams, in plan order.
-- Enables each channel in the profile, or disables it when its `epgSchedule` rule says it is off right now (see [Enabling channels by EPG schedule](#enabling-channels-by-epg-schedule)).
+- Enables each channel in the profile, or disables it when the profile says so (`enabled`, `excludeTags`, `includeTags`; see [Enabling channels per profile](#enabling-channels-per-profile)) or its `epgSchedule` rule says it is off right now (see [Enabling channels by EPG schedule](#enabling-channels-by-epg-schedule)).
 - Sets the channel's logo from, in order: `setMetadata` `logoUrl`, the most common logo among its streams, or the icon of its EPG entry (like Dispatcharr's "Set logos from EPG"). When none of them has a logo, the channel keeps the logo it already has; Waybill never clears it.
 - Recomputes the channel's catch-up flags (`is_catchup` / `catchup_days`) from its assigned streams (Dispatcharr v0.31+).
 - Copies the radio flag (`is_radio`) from the channel's first stream, as Dispatcharr does for channels created from a stream (Dispatcharr v0.32+). A channel with no streams keeps its current value.
@@ -652,7 +697,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.13.x – 1.15.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
+| 1.13.x – 1.16.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
 | 1.6.x – 1.12.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.24.0 |
 

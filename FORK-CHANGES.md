@@ -24,6 +24,9 @@ version 1.5.0 (commit `cabc873`). Everything below was added in this fork; the
 | `m3uOrder` | profile, group, member | Ranks M3U accounts by name, to prefer one provider's copy of a channel. |
 | `orderStreamsBy` | profile, group, member | Now also accepts a list of criteria (`priority`, `quality`, `m3u`) applied in order, e.g. `[priority, quality, m3u]`. The old single value `quality` still works. |
 | `epgSchedule` | profile, group, member | Enables a channel only around the EPG programmes it is for, and disables it otherwise: those that match (`action: keep`, e.g. live events) or those that do not (`action: drop`, matchers describe filler). Matchers read title, sub-title and description; `before`/`after` add margins around those programmes. |
+| `enabled`, `tags` | group, member | `enabled: false` keeps a channel managed but disabled in the profile; `tags` label channels (the group key is a tag too). |
+| `excludeTags`, `includeTags` | profile | Disable the channels with any of these tags, or keep only those with one of them enabled. |
+| `from` | profile | Copies another profile's settings and groups, so several profiles share the same channels and each enables its own subset. |
 
 New plugin setting: **Auto-apply every (minutes)** runs Apply on a timer, so `epgSchedule` follows the guide without an external scheduler.
 

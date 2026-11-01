@@ -515,6 +515,34 @@ def _to_epg_schedule(raw: Any, where: str) -> "ConfigEpgSchedule | None":
     )
 
 
+def _to_tags(raw: Any, where: str) -> list[str]:
+    """Coerce a tags list (a single string is one tag). Absent is []."""
+    if raw is None:
+        return []
+    items = [raw] if isinstance(raw, str) else raw
+    if not isinstance(items, list):
+        raise ValueError(f"{where} tags must be a list of names, got {raw!r}")
+    tags: list[str] = []
+    for item in cast(list[Any], items):
+        if (
+            not isinstance(item, (str, int))
+            or isinstance(item, bool)
+            or not str(item).strip()
+        ):
+            raise ValueError(f"{where} tags must be non-empty names, got {item!r}")
+        tags.append(str(item).strip())
+    return tags
+
+
+def _to_optional_bool(raw: Any, where: str, key: str) -> "bool | None":
+    """Coerce an optional YAML boolean; absent (None) inherits."""
+    if raw is None:
+        return None
+    if not isinstance(raw, bool):
+        raise ValueError(f"{where} {key} must be true or false, got {raw!r}")
+    return raw
+
+
 @dataclass
 class ConfigMember:
     name: str
@@ -530,6 +558,9 @@ class ConfigMember:
     stream_priorities: dict[str, int] = field(default_factory=_empty_str_int_dict)
     # None inherits from the enclosing scope; EPG_SCHEDULE_OFF clears it.
     epg_schedule: ConfigEpgSchedule | None = None
+    # False keeps the channel managed but disabled in the profile; None inherits.
+    enabled: bool | None = None
+    tags: list[str] = field(default_factory=_empty_str_list)
 
     def __post_init__(self):
         where = f"member {self.name!r}"
@@ -633,6 +664,8 @@ class ConfigGroup:
     m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     epg_schedule: ConfigEpgSchedule | None = None
+    enabled: bool | None = None
+    tags: list[str] = field(default_factory=_empty_str_list)
 
     def __post_init__(self):
         self.members = [
@@ -699,6 +732,10 @@ class ConfigGroup:
             epg_schedule=_to_epg_schedule(
                 item.get("epgSchedule"), f"member {item.get('name', '')!r}"
             ),
+            enabled=_to_optional_bool(
+                item.get("enabled"), f"member {item.get('name', '')!r}", "enabled"
+            ),
+            tags=_to_tags(item.get("tags"), f"member {item.get('name', '')!r}"),
         )
 
 
@@ -714,6 +751,12 @@ class ConfigProfile:
     start_channel_number: int | None = None
     keep_empty_channels: bool = False
     epg_schedule: ConfigEpgSchedule | None = None
+    # Channels tagged with any of these are disabled in this profile.
+    exclude_tags: list[str] = field(default_factory=_empty_str_list)
+    # When set, only channels tagged with one of these are enabled in this profile.
+    include_tags: list[str] | None = None
+    # Key of the profile this one copied its settings and groups from ("from").
+    from_profile: str | None = None
 
     def __post_init__(self):
         self.groups = {
@@ -755,7 +798,38 @@ class ConfigProfile:
             epg_schedule=_to_epg_schedule(
                 item.get("epgSchedule"), f"group {item.get('name', '')!r}"
             ),
+            enabled=_to_optional_bool(
+                item.get("enabled"), f"group {item.get('name', '')!r}", "enabled"
+            ),
+            tags=_to_tags(item.get("tags"), f"group {item.get('name', '')!r}"),
         )
+
+
+def _resolve_from(
+    name: str,
+    profiles: "Mapping[str, ConfigProfile | Mapping[str, Any]]",
+    seen: "tuple[str, ...]" = (),
+) -> "ConfigProfile | Mapping[str, Any]":
+    """Apply `from: <profile>`: start from that profile's settings and groups
+    (recursively), then let this profile's own keys replace them."""
+    item = profiles[name]
+    if isinstance(item, ConfigProfile) or not item.get("from"):
+        return item
+    source = str(item["from"])
+    if source in seen + (name,):
+        raise ValueError(
+            f"profile {name!r} from: loops ({' -> '.join(seen + (name, source))})"
+        )
+    if source not in profiles:
+        raise ValueError(f"profile {name!r} from: unknown profile {source!r}")
+    base = _resolve_from(source, profiles, seen + (name,))
+    if isinstance(base, ConfigProfile):
+        raise ValueError(
+            f"profile {name!r} from: {source!r} must be a manifest mapping"
+        )
+    merged = {k: v for k, v in base.items() if k not in ("from", "name")}
+    merged.update(item)
+    return merged
 
 
 @dataclass
@@ -763,13 +837,16 @@ class ConfigSpec:
     profiles: dict[str, ConfigProfile] = field(default_factory=_empty_str_profile_dict)
 
     def __post_init__(self):
-        self.profiles = {
-            name: self._to_profile(
-                _require_mapping(value, f"profile {name!r}")
-                if not isinstance(value, ConfigProfile)
-                else value
+        raw = {
+            name: (
+                value
+                if isinstance(value, ConfigProfile)
+                else _require_mapping(value, f"profile {name!r}")
             )
             for name, value in self.profiles.items()
+        }
+        self.profiles = {
+            name: self._to_profile(_resolve_from(name, raw)) for name in raw
         }
 
     @staticmethod
@@ -810,6 +887,18 @@ class ConfigSpec:
             epg_schedule=_to_epg_schedule(
                 item.get("epgSchedule"), f"profile {item.get('name', '')!r}"
             ),
+            exclude_tags=_to_tags(
+                item.get("excludeTags"), f"profile {item.get('name', '')!r} excludeTags"
+            ),
+            include_tags=(
+                None
+                if item.get("includeTags") is None
+                else _to_tags(
+                    item.get("includeTags"),
+                    f"profile {item.get('name', '')!r} includeTags",
+                )
+            ),
+            from_profile=(str(item["from"]) if item.get("from") else None),
         )
 
 

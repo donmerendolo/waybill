@@ -144,6 +144,27 @@
             }
           ],
           "description": "Enable each channel only around the EPG programmes it is for; inherited by groups and members"
+        },
+        "excludeTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Channels with any of these tags are disabled in this profile (they stay managed: streams, number, logo, EPG). Tags are a channel's own and its group's, plus the group key"
+        },
+        "includeTags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "When set, only channels with one of these tags are enabled in this profile; the rest are disabled"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Key of another profile to copy settings and groups from; keys set here replace the copied ones. Use it to have several profiles over the same channels, each with its own includeTags/excludeTags"
         }
       },
       "additionalProperties": false
@@ -220,6 +241,20 @@
             }
           ],
           "description": "epgSchedule override for this group; false clears the profile's rule"
+        },
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "false keeps this group's channels managed but disabled in the profile; members can override"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags for every channel in this group (see excludeTags/includeTags)"
         }
       },
       "required": [
@@ -327,6 +362,20 @@
             }
           ],
           "description": "epgSchedule override for this member; false clears the inherited rule"
+        },
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "false keeps this channel managed (streams, number, logo, EPG) but disabled in the profile; overrides the group's enabled"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags for this channel, added to its group's (see excludeTags/includeTags)"
         }
       },
       "required": [

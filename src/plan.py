@@ -162,6 +162,10 @@ class WaybillPlanFormatter:
                         total_channels += 1
                         if channel.placeholder:
                             suffix = "  — no streams, kept disabled"
+                        elif channel.disabled_by:
+                            suffix = (
+                                f"  — disabled in this profile ({channel.disabled_by})"
+                            )
                         elif not channel.enabled:
                             suffix = "  — disabled by epgSchedule"
                         else:
