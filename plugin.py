@@ -7,6 +7,7 @@ sys.path.insert(
 )
 
 import json
+import logging
 import yaml
 from dacite import Config, from_dict
 from typing import Any, Mapping, Protocol, cast
@@ -61,26 +62,27 @@ class Plugin(DispatcharrPlugin):
             fields=plugin.fields,
             actions=plugin.actions,
         )
-        self._plugin_key = os.path.basename(plugin_dir)
-        self._start_scheduler()
+        self._ensure_schedule()
 
         return None
 
-    def _start_scheduler(self) -> None:
-        """Start the auto-apply timer when running inside Dispatcharr.
+    @staticmethod
+    def _ensure_schedule() -> None:
+        """Make sure the auto-apply Celery beat schedule exists (inside Dispatcharr).
 
-        Also called on every action, so the timer comes back if the process
-        that ran it has exited.
+        Also called on every action, in case the database was not ready when
+        the plugin loaded.
         """
         try:
             import apps.plugins.loader  # noqa: F401  (only present in Dispatcharr)
         except ImportError:
             return
-        scheduler.ensure_running(self._plugin_key)
-
-    def stop(self, context: Any = None) -> None:
-        """Called by Dispatcharr when the plugin is disabled, deleted or reloaded."""
-        scheduler.stop()
+        try:
+            scheduler.ensure_schedule()
+        except Exception:  # noqa: BLE001 - e.g. before migrations; retried on the next action
+            logging.getLogger("plugins.waybill").debug(
+                "waybill: could not create the auto-apply schedule", exc_info=True
+            )
 
     def _load_manifest(self, path: str) -> DispatcharrPlugin:
         with open(path, "r", encoding="utf-8") as f:
@@ -203,7 +205,7 @@ class Plugin(DispatcharrPlugin):
             applier.apply()
 
     def run(self, action: str, params: dict[str, Any], context: dict[str, Any]) -> None:
-        self._start_scheduler()
+        self._ensure_schedule()
         self._load_configuration(context)
         logger = self._require_logger(context)
 

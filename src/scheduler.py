@@ -1,80 +1,56 @@
-"""Optional timer that runs Apply every N minutes (plugin setting auto_apply_minutes).
+"""Auto-apply timer (plugin setting auto_apply_minutes) on Dispatcharr's Celery beat.
 
-Dispatcharr has no timer hook for plugins, so the plugin runs one background
-thread per container. Several Dispatcharr processes load the plugin; a file
-lock makes sure only one of them runs the timer. The interval and the plugin's
-enabled flag are re-read from the database on every tick, so changing the
+A django-celery-beat PeriodicTask runs the `waybill.auto_apply_tick` task every
+minute. Each tick re-reads the setting and the plugin's enabled flag, and runs
+Apply through Dispatcharr's PluginManager.run_action (exactly like pressing
+Apply) once the interval has passed since the last timed run. Changing the
 setting needs no restart, and 0 turns the timer off.
 
-Each run goes through Dispatcharr's own PluginManager.run_action, exactly like
-pressing Apply: same settings, same logger, same database cleanup.
+The task is defined in the plugin's own module, so Dispatcharr 0.33+ treats the
+schedule as the plugin's: it pauses it while the plugin is disabled and deletes
+it with the plugin. On older versions the tick checks the enabled flag itself.
+
+Applies are serialised through a Redis lock (Dispatcharr's Django cache), so a
+timed run never overlaps a manual or API one, even across containers.
 """
 
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import logging
 import os
-import tempfile
-import threading
 import time
+import uuid
 from collections.abc import Iterator
+from typing import Any
 
-_LOCK_PATH = os.path.join(tempfile.gettempdir(), "waybill-scheduler.lock")
-_APPLY_LOCK_PATH = os.path.join(tempfile.gettempdir(), "waybill-apply.lock")
-_TICK_SECONDS = 30
+try:
+    from celery import shared_task
+except ImportError:  # outside Dispatcharr (tests): keep the function plain
+
+    def shared_task(*_args: Any, **_kwargs: Any):  # type: ignore[no-redef]
+        def decorate(func):
+            return func
+
+        return decorate
+
+
 SETTING = "auto_apply_minutes"
+TASK_NAME = "waybill.auto_apply_tick"
+SCHEDULE_NAME = "waybill: auto-apply"
+_LAST_RUN_KEY = "waybill:auto_apply:last_run"
+_APPLY_LOCK_KEY = "waybill:apply:lock"
+_APPLY_LOCK_TTL = 30 * 60  # seconds; frees the lock if a worker dies mid-apply
+# Beat ticks are about a minute apart; run when the interval is nearly up so a
+# 5-minute setting does not slip to 6 minutes.
+_TICK_SLACK_SECONDS = 30
 
 _logger = logging.getLogger("plugins.waybill.scheduler")
-_thread: "threading.Thread | None" = None
-_stop = threading.Event()
-_lock_fh = None
 
 
-def ensure_running(plugin_key: str) -> None:
-    """Start the timer thread unless this or another process already runs it."""
-    global _thread, _stop, _lock_fh
-    if _thread is not None and _thread.is_alive():
-        return
-    fh = open(_LOCK_PATH, "w")
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        fh.close()  # another process runs the timer
-        return
-    _lock_fh = fh
-    _stop = threading.Event()
-    _thread = threading.Thread(
-        target=_loop, args=(plugin_key, _stop), name="waybill-scheduler", daemon=True
-    )
-    _thread.start()
-    _logger.debug("waybill: auto-apply timer started")
-
-
-def stop() -> None:
-    """Stop the timer thread of this process, if it runs one, and free the lock."""
-    global _thread, _lock_fh
-    _stop.set()
-    if _thread is not None and _thread.is_alive():
-        _thread.join(timeout=5)
-    _thread = None
-    if _lock_fh is not None:
-        with contextlib.suppress(OSError):
-            fcntl.flock(_lock_fh, fcntl.LOCK_UN)
-        _lock_fh.close()
-        _lock_fh = None
-
-
-@contextlib.contextmanager
-def apply_lock() -> Iterator[None]:
-    """Serialise applies across processes (a timed run and a manual one)."""
-    with open(_APPLY_LOCK_PATH, "w") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+def plugin_key() -> str:
+    """The plugin's key in Dispatcharr: the name of its folder."""
+    return os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def interval_minutes(settings: "dict | None") -> int:
@@ -88,16 +64,37 @@ def interval_minutes(settings: "dict | None") -> int:
         return 0
 
 
-def _read_interval(plugin_key: str) -> "int | None":
-    """Minutes between runs (0 = off), or None when the plugin was removed."""
-    from django.db import close_old_connections
+def ensure_schedule() -> None:
+    """Create the every-minute PeriodicTask for the tick if it does not exist.
 
+    An existing row is left as it is, so a schedule Dispatcharr paused (plugin
+    disabled) is not switched back on here.
+    """
+    from django_celery_beat.models import IntervalSchedule, PeriodicTask
+
+    interval, _ = IntervalSchedule.objects.get_or_create(
+        every=1, period=IntervalSchedule.MINUTES
+    )
+    PeriodicTask.objects.get_or_create(
+        name=SCHEDULE_NAME,
+        defaults={"task": TASK_NAME, "interval": interval, "enabled": True},
+    )
+
+
+def is_due(last_run: "float | None", now: float, minutes: int) -> bool:
+    """Whether a timed apply is due, given the last one's time (epoch seconds)."""
+    if minutes <= 0:
+        return False
+    if last_run is None:
+        return True
+    return now - last_run >= minutes * 60 - _TICK_SLACK_SECONDS
+
+
+def _read_interval(key: str) -> "int | None":
+    """Minutes between runs (0 = off or plugin disabled), or None if the plugin is gone."""
     from apps.plugins.models import PluginConfig
 
-    try:
-        cfg = PluginConfig.objects.filter(key=plugin_key).first()
-    finally:
-        close_old_connections()
+    cfg = PluginConfig.objects.filter(key=key).first()
     if cfg is None:
         return None
     if not cfg.enabled:
@@ -105,27 +102,55 @@ def _read_interval(plugin_key: str) -> "int | None":
     return interval_minutes(cfg.settings)
 
 
-def _loop(plugin_key: str, stop_event: threading.Event) -> None:
-    last_run: "float | None" = None
-    while not stop_event.wait(_TICK_SECONDS):
-        try:
-            minutes = _read_interval(plugin_key)
-        except Exception:  # noqa: BLE001 - database not ready yet; try next tick
-            _logger.debug("waybill: could not read auto-apply setting", exc_info=True)
-            continue
-        if minutes is None:
-            _logger.info("waybill: plugin removed, stopping auto-apply timer")
-            return
-        if minutes == 0:
-            last_run = None
-            continue
-        now = time.monotonic()
-        if last_run is not None and now - last_run < minutes * 60:
-            continue
-        last_run = now
-        try:
-            from apps.plugins.loader import PluginManager
+@shared_task(name=TASK_NAME, ignore_result=True)
+def auto_apply_tick() -> str:
+    """Celery beat tick: run Apply when auto_apply_minutes have passed."""
+    from django.core.cache import cache
 
-            PluginManager.get().run_action(plugin_key, "apply", {})
-        except Exception:  # noqa: BLE001 - logged; the next tick tries again
-            _logger.exception("waybill: auto-apply failed")
+    key = plugin_key()
+    minutes = _read_interval(key)
+    if not minutes:
+        return "off"
+    now = time.time()
+    last = cache.get(_LAST_RUN_KEY)
+    if not is_due(float(last) if last is not None else None, now, minutes):
+        return "not due"
+    # Record the attempt first: a failing apply is retried after the next
+    # interval instead of on every tick.
+    cache.set(_LAST_RUN_KEY, now, timeout=None)
+    from apps.plugins.loader import PluginManager
+
+    try:
+        PluginManager.get().run_action(key, "apply", {})
+    except Exception:  # noqa: BLE001 - logged; the next interval tries again
+        _logger.exception("waybill: auto-apply failed")
+        return "failed"
+    return "applied"
+
+
+@contextlib.contextmanager
+def apply_lock(wait_seconds: float = 600) -> Iterator[None]:
+    """Serialise applies (a timed run and a manual or API one) through Redis.
+
+    Waits up to *wait_seconds* for a running apply to finish. Without a usable
+    Django cache (e.g. outside Dispatcharr) it does not lock.
+    """
+    token = uuid.uuid4().hex
+    try:
+        from django.core.cache import cache
+
+        acquired = cache.add(_APPLY_LOCK_KEY, token, timeout=_APPLY_LOCK_TTL)
+    except Exception:  # noqa: BLE001 - no cache configured: nothing to lock against
+        yield
+        return
+    deadline = time.monotonic() + wait_seconds
+    while not acquired:
+        if time.monotonic() > deadline:
+            raise TimeoutError("another Waybill apply is still running")
+        time.sleep(1)
+        acquired = cache.add(_APPLY_LOCK_KEY, token, timeout=_APPLY_LOCK_TTL)
+    try:
+        yield
+    finally:
+        if cache.get(_APPLY_LOCK_KEY) == token:
+            cache.delete(_APPLY_LOCK_KEY)

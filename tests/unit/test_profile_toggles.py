@@ -65,14 +65,22 @@ class TestConfig:
 
     def test_single_tag_string(self) -> None:
         profile = _spec(
-            todo={"groups": {"g": {"name": "G", "members": [{"name": "A", "tags": "tdt"}]}}}
+            todo={
+                "groups": {
+                    "g": {"name": "G", "members": [{"name": "A", "tags": "tdt"}]}
+                }
+            }
         ).profiles["todo"]
         assert profile.groups["g"].members[0].tags == ["tdt"]
 
-    @pytest.mark.parametrize("bad", [{"enabled": "no"}, {"tags": [""]}, {"tags": {"a": 1}}])
+    @pytest.mark.parametrize(
+        "bad", [{"enabled": "no"}, {"tags": [""]}, {"tags": {"a": 1}}]
+    )
     def test_rejects_bad_values(self, bad) -> None:
         with pytest.raises(ValueError):
-            _spec(todo={"groups": {"g": {"name": "G", "members": [{"name": "A", **bad}]}}})
+            _spec(
+                todo={"groups": {"g": {"name": "G", "members": [{"name": "A", **bad}]}}}
+            )
 
     def test_include_tags_absent_is_none(self) -> None:
         assert _spec(todo={"groups": GROUPS}).profiles["todo"].include_tags is None
@@ -81,7 +89,12 @@ class TestConfig:
 class TestFrom:
     def test_copies_groups_and_settings_and_overrides(self) -> None:
         spec = _spec(
-            todo={"name": "Todo", "keepEmptyChannels": True, "excludeTags": ["tdt"], "groups": GROUPS},
+            todo={
+                "name": "Todo",
+                "keepEmptyChannels": True,
+                "excludeTags": ["tdt"],
+                "groups": GROUPS,
+            },
             tv={"from": "todo", "name": "TV", "excludeTags": []},
         )
         tv = spec.profiles["tv"]
@@ -121,7 +134,9 @@ class TestDecisions:
         assert set(_decisions(profile).values()) == {None}
 
     def test_exclude_tags_uses_member_and_group_tags(self) -> None:
-        profile = _spec(todo={"groups": GROUPS, "excludeTags": ["tdt"]}).profiles["todo"]
+        profile = _spec(todo={"groups": GROUPS, "excludeTags": ["tdt"]}).profiles[
+            "todo"
+        ]
         assert _decisions(profile) == {
             "DAZN F1": None,
             "Teledeporte": "excludeTags: tdt",
@@ -131,7 +146,9 @@ class TestDecisions:
         }
 
     def test_group_key_is_a_tag(self) -> None:
-        profile = _spec(todo={"groups": GROUPS, "includeTags": ["deportes"]}).profiles["todo"]
+        profile = _spec(todo={"groups": GROUPS, "includeTags": ["deportes"]}).profiles[
+            "todo"
+        ]
         assert _decisions(profile) == {
             "DAZN F1": None,
             "Teledeporte": None,
