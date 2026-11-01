@@ -22,6 +22,7 @@ from .validators.base import (
 )
 from .types.config import (
     ConfigEpgSchedule,
+    ConfigGroup,
     ConfigMember,
     ConfigProfile,
     ConfigVariable,
@@ -596,13 +597,40 @@ def _effective_epg_schedule(
     return None
 
 
+def _profile_disables(
+    group_key: str,
+    group_cfg: "ConfigGroup",
+    member_cfg: ConfigMember,
+    profile: ConfigProfile,
+) -> "str | None":
+    """Why this profile disables the member's channels, or None to keep them.
+
+    `enabled: false` on the member (or its group) disables them; a member's own
+    `enabled` wins over its group's. Tags are the member's and its group's, plus
+    the group key. excludeTags disables a channel with any of them; includeTags,
+    when set, keeps only channels with one of them.
+    """
+    enabled = (
+        member_cfg.enabled if member_cfg.enabled is not None else group_cfg.enabled
+    )
+    if enabled is False:
+        return "enabled: false"
+    tags = {group_key, *group_cfg.tags, *member_cfg.tags}
+    excluded = [t for t in profile.exclude_tags if t in tags]
+    if excluded:
+        return f"excludeTags: {', '.join(excluded)}"
+    if profile.include_tags is not None and not tags.intersection(profile.include_tags):
+        return "not in includeTags"
+    return None
+
+
 def _finalise_channels(
     groups: list[GroupPlan],
     profile: ConfigProfile,
     guide: "EpgGuide | None" = None,
 ) -> list[GroupPlan]:
-    """Add keepEmptyChannels placeholders, apply epgSchedule rules and assign
-    channel numbers in manifest order.
+    """Add keepEmptyChannels placeholders, apply the profile's enabled/tag rules
+    and epgSchedule, and assign channel numbers in manifest order.
 
     Numbering runs over groups, then members, then channels. A member's
     channelNumber pins its first channel to that number and numbering continues
@@ -611,7 +639,7 @@ def _finalise_channels(
     """
     number = profile.start_channel_number
     finalised: list[GroupPlan] = []
-    for group, group_cfg in zip(groups, profile.groups.values()):
+    for group, (group_key, group_cfg) in zip(groups, profile.groups.items()):
         members = []
         for member, member_cfg in zip(group.members, group_cfg.members):
             channels = member.channels
@@ -622,9 +650,12 @@ def _finalise_channels(
             rule = _effective_epg_schedule(
                 member_cfg.epg_schedule, group_cfg.epg_schedule, profile.epg_schedule
             )
+            disabled_by = _profile_disables(group_key, group_cfg, member_cfg, profile)
             numbered = []
             for channel in channels:
-                if rule is not None and not channel.placeholder:
+                if disabled_by is not None:
+                    channel = replace(channel, enabled=False, disabled_by=disabled_by)
+                elif rule is not None and not channel.placeholder:
                     if guide is None:
                         guide = EpgGuide()
                     decision = evaluate_schedule(rule, guide, channel.epg_id)

@@ -137,6 +137,9 @@ class ChannelPlan:
     enabled: bool = True
     # Why epgSchedule enabled or disabled the channel; None without a rule.
     schedule: str | None = None
+    # Why the profile disables this channel (enabled: false, excludeTags,
+    # includeTags); None when the profile keeps it. Wins over epgSchedule.
+    disabled_by: str | None = None
 
 
 @dataclass(frozen=True)

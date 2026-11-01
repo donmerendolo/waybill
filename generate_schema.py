@@ -63,6 +63,9 @@ YAML_KEY: dict[tuple[type, str], str] = {
     (ConfigProfile, "epg_schedule"): "epgSchedule",
     (ConfigGroup, "epg_schedule"): "epgSchedule",
     (ConfigMember, "epg_schedule"): "epgSchedule",
+    (ConfigProfile, "exclude_tags"): "excludeTags",
+    (ConfigProfile, "include_tags"): "includeTags",
+    (ConfigProfile, "from_profile"): "from",
 }
 
 # Fields entirely omitted from the schema (internal implementation details).
@@ -130,6 +133,36 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "Enable each channel only around the EPG programmes it is for; inherited "
         "by groups and members"
     ),
+    (ConfigProfile, "exclude_tags"): (
+        "Channels with any of these tags are disabled in this profile (they stay "
+        "managed: streams, number, logo, EPG). Tags are a channel's own and its "
+        "group's, plus the group key"
+    ),
+    (ConfigProfile, "include_tags"): (
+        "When set, only channels with one of these tags are enabled in this "
+        "profile; the rest are disabled"
+    ),
+    (ConfigProfile, "from_profile"): (
+        "Key of another profile to copy settings and groups from; keys set here "
+        "replace the copied ones. Use it to have several profiles over the same "
+        "channels, each with its own includeTags/excludeTags"
+    ),
+    (ConfigGroup, "enabled"): (
+        "false keeps this group's channels managed but disabled in the profile; "
+        "members can override"
+    ),
+    (
+        ConfigGroup,
+        "tags",
+    ): "Tags for every channel in this group (see excludeTags/includeTags)",
+    (ConfigMember, "enabled"): (
+        "false keeps this channel managed (streams, number, logo, EPG) but disabled "
+        "in the profile; overrides the group's enabled"
+    ),
+    (
+        ConfigMember,
+        "tags",
+    ): "Tags for this channel, added to its group's (see excludeTags/includeTags)",
     (ConfigGroup, "epg_schedule"): (
         "epgSchedule override for this group; false clears the profile's rule"
     ),
