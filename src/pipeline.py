@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from apps.channels.models import Stream
+from django.db.models import Q
 
 from ._jinja import extract_template_variables
 from .matchers import build_matcher, build_q_filter
@@ -47,6 +48,16 @@ from .types.plan import (
 CHUNK_SIZE = 1000
 
 
+def active_accounts_q() -> "Q":
+    """Streams of enabled M3U accounts, plus streams without an account.
+
+    Dispatcharr leaves disabled accounts' streams in the database and hides
+    them everywhere (``exclude(m3u_account__is_active=False)``); Waybill must
+    not put them in channels either.
+    """
+    return Q(m3u_account__isnull=True) | Q(m3u_account__is_active=True)
+
+
 class AllStreams:
     """Every stream, loaded once per plan and shared by unfiltered members.
 
@@ -62,9 +73,9 @@ class AllStreams:
     def get(self) -> "list[Stream]":
         if self._streams is None:
             self._streams = list(
-                Stream.objects.filter(build_q_filter([])).iterator(
-                    chunk_size=self._chunk_size
-                )
+                Stream.objects.filter(
+                    build_q_filter([]) & active_accounts_q()
+                ).iterator(chunk_size=self._chunk_size)
             )
         return self._streams
 
@@ -284,7 +295,7 @@ class MemberPipeline:
             qs = all_streams.get()
         else:
             qs = (
-                Stream.objects.filter(q_filter)
+                Stream.objects.filter(q_filter & active_accounts_q())
                 .only(*self._required_fields)
                 .iterator(chunk_size=chunk_size)
             )

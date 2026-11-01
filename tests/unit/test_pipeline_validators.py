@@ -552,6 +552,12 @@ def test_unfiltered_members_share_one_full_stream_load(monkeypatch) -> None:
     monkeypatch.setattr(
         _Q, "__and__", lambda self, other: _Q(**self.kwargs, **other.kwargs)
     )
+    # The pipeline and matchers may have been imported with Django's real Q by
+    # another test in this process; use the stub in both.
+    import src.matchers as matchers_module
+
+    monkeypatch.setattr(pipeline_module, "Q", _Q)
+    monkeypatch.setattr(matchers_module, "Q", _Q)
 
     calls: list[object] = []
 
@@ -617,8 +623,11 @@ def test_unfiltered_members_share_one_full_stream_load(monkeypatch) -> None:
     # Pre-transformers only affect matching, so channels keep the stream names.
     assert channels == {"DAZN 1 BAR FHD": [1], "DAZN 2 BAR FHD": [2], "DAZN 1": [3]}
     # One shared load for both unfiltered members, plus the filtered member's
-    # own database query.
-    assert [bool(q) for q in calls] == [False, True]
+    # own database query. Both skip streams of disabled M3U accounts; only the
+    # member's query also filters by name.
+    active = {"m3u_account__isnull", "m3u_account__is_active"}
+    assert [bool(set(q.kwargs) - active) for q in calls] == [False, True]
+    assert all(active <= set(q.kwargs) for q in calls)
 
 
 class _AccountManager:
