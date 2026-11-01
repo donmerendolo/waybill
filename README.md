@@ -6,7 +6,7 @@
 See [FORK-CHANGES.md](FORK-CHANGES.md) for what this fork changes from [upstream Waybill](https://github.com/Matthew-Beckett/waybill).
 
 > [!NOTE]
-> Built against Dispatcharr v0.32.0 and works on v0.31.0. The apply path degrades gracefully on older releases that lack the newer hooks.
+> Built against Dispatcharr v0.33.0 and works on v0.31.0 and later. The apply path degrades gracefully on older releases that lack the newer hooks.
 
 A [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) plugin for managing channel configurations declaratively. You define a YAML manifest describing which streams to keep and how to name them. Waybill plans and applies those changes to Dispatcharr for you.
 
@@ -257,7 +257,9 @@ How a channel is decided, at the moment of the plan or apply:
 
 Like `streamProfile`, `epgSchedule` can be set on a profile, a group or a member, and the most specific one applies; `epgSchedule: false` clears an inherited rule. Channels kept by `keepEmptyChannels` stay disabled regardless. The plan shows the decision under each channel, e.g. `Schedule: on: "DIRECTO Jornada 10: Barcelona - Real Madrid" Sun 21:00-23:00`, or `Schedule: off: "Disfruta de DAZN en Movistar Plus" Wed 18:00-22:00` with `— disabled by epgSchedule` next to the channel.
 
-The schedule only changes when Waybill runs, so run Apply regularly: set **Auto-apply every (minutes)** in the plugin settings (e.g. `5`; `0`, the default, turns it off), or call Dispatcharr's API (`POST /api/plugins/plugins/<key>/run/` with `{"action": "apply"}`) from a scheduler of your own. The timer runs in one Dispatcharr process; it re-reads the setting on each tick, so changes need no restart, and it never runs two applies at once.
+The schedule only changes when Waybill runs, so run Apply regularly: set **Auto-apply every (minutes)** in the plugin settings (e.g. `5`; `0`, the default, turns it off), or call Dispatcharr's API (`POST /api/plugins/plugins/<key>/run/` with `{"action": "apply"}`) from a scheduler of your own.
+
+The timer is a Celery beat schedule named `waybill: auto-apply` that Waybill creates when it loads: every minute it re-reads the setting and the plugin's enabled flag, and runs Apply once the interval has passed, so changes need no restart. Applies are serialised through Redis, so a timed run never overlaps a manual or API one. On Dispatcharr 0.33+ the schedule belongs to the plugin: it is paused while the plugin is disabled and deleted with it. On older versions, delete the `waybill: auto-apply` periodic task yourself if you remove the plugin.
 
 ---
 
@@ -697,6 +699,7 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
+| 1.17.x | v0.33.0 (built and locked against), v0.31.0 and v0.32.0; older releases fall back gracefully where newer hooks are missing |
 | 1.13.x – 1.16.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
 | 1.6.x – 1.12.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.24.0 |
