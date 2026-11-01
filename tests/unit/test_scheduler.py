@@ -65,7 +65,9 @@ def dispatcharr(monkeypatch):
             )
         ),
     )
-    manager = SimpleNamespace(run_action=lambda key, action, params: runs.append((key, action)))
+    manager = SimpleNamespace(
+        run_action=lambda key, action, params: runs.append((key, action))
+    )
     stub("apps.plugins.loader", PluginManager=SimpleNamespace(get=lambda: manager))
     monkeypatch.setattr(scheduler, "plugin_key", lambda: "waybill")
     return SimpleNamespace(cache=cache, configs=configs, runs=runs, manager=manager)
@@ -74,14 +76,20 @@ def dispatcharr(monkeypatch):
 class TestTick:
     def test_plugin_missing_or_disabled_or_off(self, dispatcharr) -> None:
         assert scheduler.auto_apply_tick() == "off"
-        dispatcharr.configs["waybill"] = SimpleNamespace(enabled=False, settings={"auto_apply_minutes": 5})
+        dispatcharr.configs["waybill"] = SimpleNamespace(
+            enabled=False, settings={"auto_apply_minutes": 5}
+        )
         assert scheduler.auto_apply_tick() == "off"
-        dispatcharr.configs["waybill"] = SimpleNamespace(enabled=True, settings={"auto_apply_minutes": 0})
+        dispatcharr.configs["waybill"] = SimpleNamespace(
+            enabled=True, settings={"auto_apply_minutes": 0}
+        )
         assert scheduler.auto_apply_tick() == "off"
         assert dispatcharr.runs == []
 
     def test_runs_then_waits(self, dispatcharr, monkeypatch) -> None:
-        dispatcharr.configs["waybill"] = SimpleNamespace(enabled=True, settings={"auto_apply_minutes": 5})
+        dispatcharr.configs["waybill"] = SimpleNamespace(
+            enabled=True, settings={"auto_apply_minutes": 5}
+        )
         now = [1000.0]
         monkeypatch.setattr(scheduler.time, "time", lambda: now[0])
         assert scheduler.auto_apply_tick() == "applied"
@@ -91,8 +99,12 @@ class TestTick:
         assert scheduler.auto_apply_tick() == "applied"
         assert dispatcharr.runs == [("waybill", "apply"), ("waybill", "apply")]
 
-    def test_failure_is_logged_and_waits_for_next_interval(self, dispatcharr, monkeypatch) -> None:
-        dispatcharr.configs["waybill"] = SimpleNamespace(enabled=True, settings={"auto_apply_minutes": 5})
+    def test_failure_is_logged_and_waits_for_next_interval(
+        self, dispatcharr, monkeypatch
+    ) -> None:
+        dispatcharr.configs["waybill"] = SimpleNamespace(
+            enabled=True, settings={"auto_apply_minutes": 5}
+        )
 
         def boom(*_):
             raise RuntimeError("db down")
