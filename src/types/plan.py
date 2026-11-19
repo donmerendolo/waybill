@@ -105,8 +105,11 @@ class StreamRecord:
     tvg_id: str | None = None
     logo_url: str | None = None
     order_reason: str | None = None
-    # From the member's streamPriorities; higher sorts first, unlisted streams are 0.
+    # Sum of the priority points from every scope (priorities.m3u / .streams on the
+    # profile, group and member, and streamPriorities); higher sorts first.
     priority: int = 0
+    # Where those points came from, e.g. ("+50 m3u acme (profile)", "+200 stream c8ad9458…").
+    priority_parts: tuple[str, ...] = ()
     # Set when an m3uOrder applies: the stream's M3U account name and its position
     # in that order (unlisted accounts sort after every listed one).
     m3u_account: str | None = None

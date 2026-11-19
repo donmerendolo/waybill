@@ -171,3 +171,38 @@ def test_stream_sort_criteria_resolution() -> None:
     assert stream_sort_criteria(q) == (p, m, q)  # legacy meaning of "quality"
     assert stream_sort_criteria(p) == (p,)
     assert stream_sort_criteria([q, m]) == (q, m)  # a list states everything
+
+
+# ── priorities block ─────────────────────────────────────────────────────────
+
+
+def _member(**extra):
+    from src.types.config import ConfigGroup
+
+    return ConfigGroup._to_member({"name": "A", **extra})
+
+
+def test_priorities_block_parses():
+    m = _member(priorities={"m3u": {"acme": 50}, "streams": {"abc": -10}})
+    assert m.priorities.m3u == {"acme": 50}
+    assert m.priorities.streams == {"abc": -10}
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ([1], "must be a mapping"),
+        ({"m3u": {"a": 1}, "names": {}}, "unknown key"),
+        ({"m3u": {"a": "x"}}, "must be an integer"),
+        ({"streams": {123: 1}}, "in quotes"),
+        ({"m3u": {"Acme": 1, "acme": 2}}, "ignore case"),
+    ],
+)
+def test_priorities_block_rejects(raw, match):
+    with pytest.raises(ValueError, match=match):
+        _member(priorities=raw)
+
+
+def test_same_key_in_stream_priorities_and_priorities_is_an_error():
+    with pytest.raises(ValueError, match="keep one"):
+        _member(streamPriorities={"abc": 1}, priorities={"streams": {"abc": 2}})

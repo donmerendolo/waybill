@@ -34,6 +34,7 @@ from src.types.config import (
     ConfigMatcher,
     ConfigMember,
     ConfigMetadata,
+    ConfigPriorities,
     ConfigProfile,
     ConfigSpec,
     ConfigTransformer,
@@ -102,6 +103,11 @@ CLASS_DESCRIPTIONS: dict[type, str] = {
         "A mutation rule applied to a stream field value or explicit metadata fields; "
         "transformers run in order after all matchers pass"
     ),
+    ConfigPriorities: (
+        "Priority points for streams. The points of every scope that applies "
+        "(profile, group, member, plus the member's streamPriorities) add up; "
+        "streams are ordered by the total, highest first (orderStreamsBy 'priority')"
+    ),
     ConfigValidator: (
         "A post-transformation assertion applied to transformed streams, or for count "
         "validators to assembled channels/member output; violations are surfaced as "
@@ -123,7 +129,8 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
     ),
     (ConfigProfile, "order_streams_by"): (
         "Default stream ordering applied to every channel in this profile: an ordered "
-        "list of criteria (priority = streamPriorities, m3u = m3uOrder, quality = "
+        "list of criteria (priority = total of priorities and streamPriorities points, "
+        "m3u = m3uOrder, quality = "
         "resolution then bitrate), e.g. [priority, quality, m3u]. Criteria not listed "
         "are not used. The single value 'quality' means [priority, m3u, quality]; "
         "absent means [priority, m3u]"
@@ -191,6 +198,23 @@ FIELD_DESCRIPTIONS: dict[tuple[type, str], str] = {
         "are ordered by priority, "
         "highest first, then by orderStreamsBy within the same priority. Keys that "
         "match nothing are reported in the plan"
+    ),
+    (ConfigProfile, "priorities"): (
+        "Priority points for every stream in this profile, by M3U account (m3u) "
+        "or by stream URL fragment / hash (streams); groups and members add theirs"
+    ),
+    (ConfigGroup, "priorities"): (
+        "Priority points added to the profile's for this group's streams"
+    ),
+    (ConfigMember, "priorities"): (
+        "Priority points added to the group's and profile's for this channel's streams"
+    ),
+    (ConfigPriorities, "m3u"): (
+        "M3U account name (case-insensitive) -> points for every stream from it"
+    ),
+    (ConfigPriorities, "streams"): (
+        "Stream URL fragment (e.g. an AceStream id) or stream hash -> points; the "
+        "first matching key in this scope applies. Keys that match nothing are reported"
     ),
     (ConfigMember, "channel_number"): (
         "Pins this member's first channel to this number; numbering of following "
@@ -308,6 +332,7 @@ EXPORT_CLASSES: list[type] = [
     ConfigProfile,
     ConfigGroup,
     ConfigMember,
+    ConfigPriorities,
     ConfigMatcher,
     ConfigTransformer,
     ConfigValidator,
