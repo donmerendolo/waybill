@@ -8,7 +8,7 @@ See [FORK-CHANGES.md](FORK-CHANGES.md) for what this fork changes from [upstream
 > [!NOTE]
 > Built against Dispatcharr v0.33.0 and works on v0.31.0 and later. The apply path degrades gracefully on older releases that lack the newer hooks.
 
-A [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) plugin for managing channel configurations declaratively. You define a YAML manifest describing which streams to keep and how to name them. Waybill plans and applies those changes to Dispatcharr for you.
+A [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) plugin for managing channel configurations declaratively. You define a YAML manifest describing which streams to keep and how to name them. Waybill plans and applies those changes to Dispatcharr for you: **Plan** computes what would change (channels, numbers, streams in order, logos, EPG, which channels are disabled and why) and writes it to the log without touching anything; **Apply** computes the same and writes it to Dispatcharr.
 
 ## Overview
 
@@ -651,6 +651,23 @@ Asserts that a field is non-empty. The default `scope: stream` checks each trans
 | `scope` | no (default: `stream`) | `stream` validates each transformed stream; `channel` validates the assembled channel |
 | `field` | no (default: `name`) | Stream or channel attribute to check; `tvg_id` maps to channel `epg_id` when `scope: channel` |
 | `action` | no (default: `warn`) | `warn` or `fail` |
+
+---
+
+## Loading the manifest from a URL
+
+Instead of pasting the manifest into the plugin settings, you can keep it in a repository and set **Manifest URL**. Plan and Apply (and the auto-apply timer) then download it on every run and ignore the YAML box.
+
+- The first line of the log says where the manifest came from, with its size and the start of its SHA-256, so you can tell which version a run used:
+
+  ```text
+  Manifest: downloaded from https://raw.githubusercontent.com/<user>/<repo>/main/waybill.yaml (54.2 KB, sha256 3f1c0a9b7e22)
+  ```
+
+- If the download fails (network error, HTTP error, empty file, over 2 MB, not UTF-8), the run stops and **nothing is changed**. Waybill never falls back to the YAML box or an older copy.
+- A GitHub page link (`https://github.com/<user>/<repo>/blob/<ref>/<path>`) is converted to its raw file link.
+- `raw.githubusercontent.com` caches files, so for about 5 minutes after a push it can still serve the previous version. To pin a version, use a commit SHA instead of the branch name in the URL.
+- For a private repository, set **Manifest URL token**. It is sent as `Authorization: Bearer <token>`; for GitHub, a fine-grained token with read-only access to the repository's contents is enough. Query strings and credentials in the URL are never written to the log.
 
 ---
 

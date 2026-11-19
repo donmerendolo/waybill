@@ -28,7 +28,7 @@ version 1.5.0 (commit `cabc873`). Everything below was added in this fork; the
 | `excludeTags`, `includeTags` | profile | Disable the channels with any of these tags, or keep only those with one of them enabled. |
 | `from` | profile | Copies another profile's settings and groups, so several profiles share the same channels and each enables its own subset. |
 
-New plugin setting: **Auto-apply every (minutes)** runs Apply on a timer (a Celery beat schedule the plugin owns), so `epgSchedule` follows the guide without an external scheduler.
+New plugin settings: **Manifest URL** (and an optional token) downloads the manifest from a URL, such as a GitHub raw link, on every Plan and Apply; a failed download changes nothing. **Auto-apply every (minutes)** runs Apply on a timer (a Celery beat schedule the plugin owns), so `epgSchedule` follows the guide without an external scheduler.
 
 New transformer: **`normalizeUnicode`** applies NFKC, turning decorated letters such as squared
 `🄳🄰🅉🄽` or full-width `ＤＡＺＮ` into plain text before matching.

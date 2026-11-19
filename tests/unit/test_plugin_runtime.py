@@ -165,3 +165,37 @@ def test_run_raises_for_unknown_action() -> None:
         )
 
     assert any("WARN:Unknown action" in msg for msg in logger.messages)
+
+
+def test_load_logs_where_the_manifest_came_from() -> None:
+    module = _load_plugin_module_with_stubs()
+    plugin = module.Plugin.__new__(module.Plugin)
+    logger = _GoodLogger()
+
+    plugin._load_configuration({"settings": {"manifest": _valid_manifest()}}, logger)
+
+    assert logger.messages == ["INFO:Manifest: from the plugin settings"]
+
+
+def test_manifest_url_failure_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_plugin_module_with_stubs()
+    plugin = module.Plugin.__new__(module.Plugin)
+    source_mod = module.manifest_source
+
+    def failing_resolve(settings):
+        raise source_mod.ManifestSourceError(
+            "Could not download the manifest from x: boom"
+        )
+
+    monkeypatch.setattr(source_mod, "resolve", failing_resolve)
+    with pytest.raises(
+        module.WaybillConfigurationError, match="boom — nothing was changed"
+    ):
+        plugin.run(
+            action="apply",
+            params={},
+            context={
+                "logger": _GoodLogger(),
+                "settings": {"manifest_url": "https://x/w.yaml"},
+            },
+        )
