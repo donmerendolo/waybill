@@ -62,6 +62,22 @@ def _quality_order_reason(stream_stats: "dict | None") -> str:
         return "quality: no stats"
 
 
+def _priority_reason(r: StreamRecord) -> str:
+    """Order reason, e.g. "priority 250 (+50 m3u acme (profile), +200 stream c8ad…)".
+
+    A single point source on the member's own streams (plain streamPriorities)
+    keeps the short form "priority 5".
+    """
+    parts = r.priority_parts
+    if (
+        len(parts) == 1
+        and parts[0].split(" ", 2)[1] == "stream"
+        and "(" not in parts[0]
+    ):
+        return f"priority {r.priority}"
+    return f"priority {r.priority} ({', '.join(parts)})"
+
+
 def assemble_member_plan(
     member_name: str,
     matcher_descs: "list[str]",
@@ -112,8 +128,8 @@ def _assemble_channel_plan(
         for criterion in criteria:
             if criterion is OrderStreamsBy.PRIORITY:
                 key.append(-r.priority)
-                if r.priority:
-                    reasons.append(f"priority {r.priority}")
+                if r.priority_parts:
+                    reasons.append(_priority_reason(r))
             elif criterion is OrderStreamsBy.M3U:
                 key.append(r.m3u_rank)
                 if r.m3u_account is not None:
@@ -230,7 +246,7 @@ class WaybillPlanFormatter:
                                 )
                     for key in member.unmatched_priorities:
                         lines.append(
-                            f'      [WARN] streamPriorities entry matched no stream: "{key}"'
+                            f'      [WARN] streamPriorities / priorities.streams entry matched no stream: "{key}"'
                         )
                     if member.dropped:
                         lines.append(f"      Dropped: {member.dropped_count} stream(s)")

@@ -355,28 +355,71 @@ def _empty_str_int_dict() -> dict[str, int]:
     return {}
 
 
-def _to_priorities(raw: Any, where: str) -> dict[str, int]:
-    """Coerce streamPriorities: a mapping of stream hash / URL fragment to an integer."""
+def _to_priorities(
+    raw: Any, where: str, label: str = "streamPriorities", what: str = "stream id"
+) -> dict[str, int]:
+    """Coerce a mapping of key (stream hash / URL fragment, or M3U name) to an integer."""
     if raw is None:
         return {}
     if not isinstance(raw, Mapping):
-        raise ValueError(
-            f"{where} streamPriorities must be a mapping of stream id to priority"
-        )
+        raise ValueError(f"{where} {label} must be a mapping of {what} to priority")
     priorities: dict[str, int] = {}
     for key, value in cast(Mapping[Any, Any], raw).items():
         if not isinstance(key, str) or not key.strip():
             # Unquoted all-digit ids are parsed by YAML as numbers (losing leading zeros).
             raise ValueError(
-                f"{where} streamPriorities key {key!r} must be a non-empty string; "
-                "put stream ids in quotes"
+                f"{where} {label} key {key!r} must be a non-empty string; "
+                f"put {what}s in quotes"
             )
         if isinstance(value, bool) or not isinstance(value, int):
             raise ValueError(
-                f"{where} streamPriorities[{key!r}] must be an integer, got {value!r}"
+                f"{where} {label}[{key!r}] must be an integer, got {value!r}"
             )
         priorities[key.strip()] = value
     return priorities
+
+
+@dataclass(frozen=True)
+class ConfigPriorities:
+    """Priority points for streams; every scope's points add up (see `priorities`)."""
+
+    # M3U account name -> points for every stream from that account (names ignore case)
+    m3u: dict[str, int] = field(default_factory=_empty_str_int_dict)
+    # Stream URL fragment (e.g. an AceStream id) or stream hash -> points
+    streams: dict[str, int] = field(default_factory=_empty_str_int_dict)
+
+
+def _to_priority_block(raw: Any, where: str) -> "ConfigPriorities | None":
+    """Coerce `priorities: {m3u: {...}, streams: {...}}`; absent means None."""
+    if raw is None:
+        return None
+    if isinstance(raw, ConfigPriorities):
+        return raw
+    if not isinstance(raw, Mapping):
+        raise ValueError(
+            f"{where} priorities must be a mapping with m3u and/or streams"
+        )
+    raw_map = cast(Mapping[Any, Any], raw)
+    unknown = [str(k) for k in raw_map if k not in ("m3u", "streams")]
+    if unknown:
+        raise ValueError(
+            f"{where} priorities has unknown key(s) {unknown}; use m3u and streams"
+        )
+    m3u = _to_priorities(
+        raw_map.get("m3u"), where, "priorities.m3u", "M3U account name"
+    )
+    folded: dict[str, str] = {}
+    for name in m3u:
+        if name.casefold() in folded:
+            raise ValueError(
+                f"{where} priorities.m3u lists {folded[name.casefold()]!r} and "
+                f"{name!r}; M3U names ignore case"
+            )
+        folded[name.casefold()] = name
+    return ConfigPriorities(
+        m3u=m3u,
+        streams=_to_priorities(raw_map.get("streams"), where, "priorities.streams"),
+    )
 
 
 def _to_m3u_order(raw: Any, where: str) -> "list[str] | None":
@@ -556,6 +599,8 @@ class ConfigMember:
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     channel_number: int | None = None
     stream_priorities: dict[str, int] = field(default_factory=_empty_str_int_dict)
+    # Points added to the group's and profile's (see ConfigPriorities).
+    priorities: ConfigPriorities | None = None
     # None inherits from the enclosing scope; EPG_SCHEDULE_OFF clears it.
     epg_schedule: ConfigEpgSchedule | None = None
     # False keeps the channel managed but disabled in the profile; None inherits.
@@ -564,6 +609,13 @@ class ConfigMember:
 
     def __post_init__(self):
         where = f"member {self.name!r}"
+        if self.priorities is not None:
+            both = [k for k in self.stream_priorities if k in self.priorities.streams]
+            if both:
+                raise ValueError(
+                    f"{where} lists {both} in both streamPriorities and "
+                    "priorities.streams; keep one"
+                )
         self.matchers = [
             self._to_matcher(
                 item
@@ -664,6 +716,8 @@ class ConfigGroup:
     m3u_order: list[str] | None = None
     variables: dict[str, ConfigVariable] = field(default_factory=_empty_variable_dict)
     epg_schedule: ConfigEpgSchedule | None = None
+    # Points added to the profile's and to each member's (see ConfigPriorities).
+    priorities: ConfigPriorities | None = None
     enabled: bool | None = None
     tags: list[str] = field(default_factory=_empty_str_list)
 
@@ -729,6 +783,9 @@ class ConfigGroup:
                 item.get("streamPriorities"),
                 f"member {item.get('name', '')!r}",
             ),
+            priorities=_to_priority_block(
+                item.get("priorities"), f"member {item.get('name', '')!r}"
+            ),
             epg_schedule=_to_epg_schedule(
                 item.get("epgSchedule"), f"member {item.get('name', '')!r}"
             ),
@@ -751,6 +808,8 @@ class ConfigProfile:
     start_channel_number: int | None = None
     keep_empty_channels: bool = False
     epg_schedule: ConfigEpgSchedule | None = None
+    # Points for every channel's streams; groups and members add theirs.
+    priorities: ConfigPriorities | None = None
     # Channels tagged with any of these are disabled in this profile.
     exclude_tags: list[str] = field(default_factory=_empty_str_list)
     # When set, only channels tagged with one of these are enabled in this profile.
@@ -797,6 +856,9 @@ class ConfigProfile:
             variables=variables,
             epg_schedule=_to_epg_schedule(
                 item.get("epgSchedule"), f"group {item.get('name', '')!r}"
+            ),
+            priorities=_to_priority_block(
+                item.get("priorities"), f"group {item.get('name', '')!r}"
             ),
             enabled=_to_optional_bool(
                 item.get("enabled"), f"group {item.get('name', '')!r}", "enabled"
@@ -886,6 +948,9 @@ class ConfigSpec:
             ),
             epg_schedule=_to_epg_schedule(
                 item.get("epgSchedule"), f"profile {item.get('name', '')!r}"
+            ),
+            priorities=_to_priority_block(
+                item.get("priorities"), f"profile {item.get('name', '')!r}"
             ),
             exclude_tags=_to_tags(
                 item.get("excludeTags"), f"profile {item.get('name', '')!r} excludeTags"

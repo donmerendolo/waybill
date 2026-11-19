@@ -20,8 +20,9 @@ version 1.5.0 (commit `cabc873`). Everything below was added in this fork; the
 | `startChannelNumber` | profile | Numbers channels consecutively in manifest order. |
 | `channelNumber` | member | Pins a channel to a fixed number, so deleting a channel leaves a gap instead of renumbering the rest. |
 | `keepEmptyChannels` | profile | A member with no streams keeps its channel, disabled, with its number, logo and EPG. It is re-enabled when streams return. |
-| `streamPriorities` | member | Integer priority per feed, keyed by URL or stream hash (not by name). Higher goes first; negative sends unreliable feeds to the end. |
-| `m3uOrder` | profile, group, member | Ranks M3U accounts by name, to prefer one provider's copy of a channel. |
+| `priorities` | profile, group, member | Points per M3U account (`m3u`) and per feed (`streams`, keyed by URL or stream hash). Points from every level add up, so a group or channel can raise or lower an account (negative points); streams are ordered by the total. The plan shows where each stream's points came from. |
+| `streamPriorities` | member | Integer priority per feed, keyed by URL or stream hash (not by name). Same as the member's `priorities.streams`, which it predates; its points add up with the rest. |
+| `m3uOrder` | profile, group, member | Ranks M3U accounts by name, to prefer one provider's copy of a channel (older alternative to `priorities.m3u`). |
 | `orderStreamsBy` | profile, group, member | Now also accepts a list of criteria (`priority`, `quality`, `m3u`) applied in order, e.g. `[priority, quality, m3u]`. The old single value `quality` still works. |
 | `epgSchedule` | profile, group, member | Enables a channel only around the EPG programmes it is for, and disables it otherwise: those that match (`action: keep`, e.g. live events) or those that do not (`action: drop`, matchers describe filler). Matchers read title, sub-title and description; `before`/`after` add margins around those programmes. |
 | `enabled`, `tags` | group, member | `enabled: false` keeps a channel managed but disabled in the profile; `tags` label channels (the group key is a tag too). |

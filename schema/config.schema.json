@@ -108,7 +108,7 @@
               "type": "null"
             }
           ],
-          "description": "Default stream ordering applied to every channel in this profile: an ordered list of criteria (priority = streamPriorities, m3u = m3uOrder, quality = resolution then bitrate), e.g. [priority, quality, m3u]. Criteria not listed are not used. The single value 'quality' means [priority, m3u, quality]; absent means [priority, m3u]"
+          "description": "Default stream ordering applied to every channel in this profile: an ordered list of criteria (priority = total of priorities and streamPriorities points, m3u = m3uOrder, quality = resolution then bitrate), e.g. [priority, quality, m3u]. Criteria not listed are not used. The single value 'quality' means [priority, m3u, quality]; absent means [priority, m3u]"
         },
         "m3uOrder": {
           "type": [
@@ -144,6 +144,17 @@
             }
           ],
           "description": "Enable each channel only around the EPG programmes it is for; inherited by groups and members"
+        },
+        "priorities": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConfigPriorities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Priority points for every stream in this profile, by M3U account (m3u) or by stream URL fragment / hash (streams); groups and members add theirs"
         },
         "excludeTags": {
           "type": "array",
@@ -241,6 +252,17 @@
             }
           ],
           "description": "epgSchedule override for this group; false clears the profile's rule"
+        },
+        "priorities": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConfigPriorities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Priority points added to the profile's for this group's streams"
         },
         "enabled": {
           "type": [
@@ -352,6 +374,17 @@
           },
           "description": "Map of stream URL fragment (e.g. an AceStream id) or stream hash to integer priority (default 0). A key matches a stream whose URL contains it or whose stream hash equals it; the first matching key in manifest order wins. Streams are ordered by priority, highest first, then by orderStreamsBy within the same priority. Keys that match nothing are reported in the plan"
         },
+        "priorities": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConfigPriorities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Priority points added to the group's and profile's for this channel's streams"
+        },
         "epgSchedule": {
           "oneOf": [
             {
@@ -381,6 +414,27 @@
       "required": [
         "name"
       ],
+      "additionalProperties": false
+    },
+    "ConfigPriorities": {
+      "type": "object",
+      "description": "Priority points for streams. The points of every scope that applies (profile, group, member, plus the member's streamPriorities) add up; streams are ordered by the total, highest first (orderStreamsBy 'priority')",
+      "properties": {
+        "m3u": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "M3U account name (case-insensitive) -> points for every stream from it"
+        },
+        "streams": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Stream URL fragment (e.g. an AceStream id) or stream hash -> points; the first matching key in this scope applies. Keys that match nothing are reported"
+        }
+      },
       "additionalProperties": false
     },
     "ConfigMatcher": {

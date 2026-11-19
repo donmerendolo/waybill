@@ -757,7 +757,9 @@ def test_unknown_m3u_names_are_reported_once(monkeypatch) -> None:
         member_extra={"m3uOrder": ["Typo-Account"]},
     )
 
-    assert plan.warnings == ['m3uOrder entry matches no M3U account: "typo-account"']
+    assert plan.warnings == [
+        'm3uOrder / priorities.m3u entry matches no M3U account: "typo-account"'
+    ]
 
 
 def test_without_m3u_order_accounts_are_never_loaded(monkeypatch) -> None:
@@ -828,3 +830,99 @@ def test_legacy_quality_value_keeps_priority_then_m3u_then_quality(monkeypatch) 
     )
 
     assert _order(plan) == [4, 3, 2, 1]
+
+
+# ── priorities: points from every scope add up ──────────────────────────────
+
+
+def test_priorities_add_up_across_profile_group_and_member(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _set_streams(
+        _acct(1, account_id=1, height=2160),  # ipfs
+        _acct(2, account_id=2, height=480),  # vacaiones
+        _acct(3, account_id=2, height=720, ace="trusted"),  # vacaiones, trusted
+    )
+
+    plan = _m3u_plan(
+        {
+            "orderStreamsBy": ["priority", "quality"],
+            "priorities": {"m3u": {"ipfs": 30, "VACAIONESENELMAR.XO.JE": 50}},
+        },
+        member_extra={"priorities": {"streams": {"trusted": 200}}},
+        group_extra={"priorities": {"m3u": {"ipfs": 40}}},
+    )
+
+    # 3: 50 + 200 = 250; 1: 30 + 40 = 70; 2: 50.
+    assert _order(plan) == [3, 1, 2]
+    streams = plan.profiles[0].groups[0].members[0].channels[0].streams
+    assert [s.priority for s in streams] == [250, 70, 50]
+    assert streams[0].order_reason == (
+        "priority 250 (+50 m3u vacaionesenelmar.xo.je (profile), +200 stream trusted), "
+        "quality: 720p, 1000kbps"
+    )
+    assert streams[1].order_reason == (
+        "priority 70 (+30 m3u ipfs (profile), +40 m3u ipfs (group)), "
+        "quality: 2160p, 1000kbps"
+    )
+    assert plan.warnings == []
+
+
+def test_member_can_subtract_from_inherited_points(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _set_streams(_acct(1, account_id=1, height=720), _acct(2, account_id=2, height=720))
+
+    plan = _m3u_plan(
+        {"orderStreamsBy": ["priority"], "priorities": {"m3u": {"ipfs": 50}}},
+        member_extra={"priorities": {"m3u": {"ipfs": -60}}},
+    )
+
+    assert _order(plan) == [2, 1]  # ipfs: 50 - 60 = -10 < 0
+    assert plan.profiles[0].groups[0].members[0].channels[0].streams[1].priority == -10
+
+
+def test_stream_priorities_count_as_member_points(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _set_streams(
+        _acct(1, account_id=1, height=720),
+        _acct(2, account_id=2, height=720, ace="trusted"),
+    )
+
+    plan = _m3u_plan(
+        {"orderStreamsBy": ["priority"], "priorities": {"m3u": {"ipfs": 10}}},
+        member_extra={"streamPriorities": {"trusted": 5}},
+    )
+
+    # 10 (ipfs) beats 5 (trusted)
+    assert _order(plan) == [1, 2]
+
+
+def test_unmatched_inherited_stream_keys_and_unknown_m3u_are_warned(
+    monkeypatch,
+) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _set_streams(_acct(1, account_id=1, height=720, ace="trusted"))
+
+    plan = _m3u_plan(
+        {"priorities": {"m3u": {"typo": 1}, "streams": {"gone": 5, "trusted": 1}}},
+        group_extra={"priorities": {"streams": {"gone-too": 1}}},
+        member_extra={"priorities": {"streams": {"member-gone": 1}}},
+    )
+
+    assert plan.warnings == [
+        'm3uOrder / priorities.m3u entry matches no M3U account: "typo"',
+        'profile "p" priorities.streams entry matched no stream: "gone"',
+        'group "g" priorities.streams entry matched no stream: "gone-too"',
+    ]
+    member = plan.profiles[0].groups[0].members[0]
+    assert member.unmatched_priorities == ["member-gone"]
+
+
+def test_priority_m3u_points_load_accounts_without_m3u_order(monkeypatch) -> None:
+    _install_accounts(monkeypatch, _ACCOUNTS)
+    _set_streams(
+        _acct(1, account_id=1, height=720), _acct(2, account_id=2, height=1080)
+    )
+
+    plan = _m3u_plan({"priorities": {"m3u": {"ipfs": 1}}})
+
+    assert _order(plan) == [1, 2]

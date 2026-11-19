@@ -113,37 +113,63 @@ members:
 
 ### Stream priorities
 
-Some feeds claim to carry a channel but are unreliable (wrong channel, wrong language, frequent drops), so quality alone is not a good order. `streamPriorities` gives individual feeds of a member an integer priority:
+Some feeds claim to carry a channel but are unreliable (wrong channel, wrong language, frequent drops), and some M3U accounts are better than others, so quality alone is not a good order. `priorities` gives streams points; a stream's priority is the **sum** of the points every scope gives it, and higher goes first.
 
 ```yaml
-- name: DAZN F1
-  streamPriorities:
-    "<acestream-id-of-reliable-feed>": 10   # reliable: try it first, even over 4K
-    "<acestream-id-of-flaky-feed>": -10     # often the wrong channel: last resort
-  matchers:
-    - type: exactMatch
-      values: ["DAZN F1", "DAZN F1 FHD", "DAZN F1 SD", ...]
+spec:
+  profiles:
+    todo:
+      orderStreamsBy: [priority, quality]   # points first; picture quality breaks ties
+      priorities:
+        m3u:                    # points for every stream from an M3U account
+          provider-a: 50
+          provider-b: 40
+          provider-c: 30
+          provider-flaky: -20
+      groups:
+        sports:
+          name: Sports
+          priorities:
+            m3u:
+              provider-c: 100   # added to the profile's 30 for this group: 130
+          members:
+            - name: DAZN F1
+              priorities:
+                streams:        # points for single feeds, by URL fragment or hash
+                  "<acestream-id-of-reliable-feed>": 200
+                  "<acestream-id-of-flaky-feed>": -10
+              matchers:
+                - type: exactMatch
+                  values: ["DAZN F1"]
 ```
 
-How a feed gets its priority:
+A `priorities` block can go on the profile, on a group and on a member, with two maps:
 
-1. Only the streams the member's matchers already selected are considered. A key never adds a stream to a channel or moves one between channels.
-2. For each of those streams, the keys are checked in the order they are written. The first key that fits gives the stream its priority. A key fits when either:
-   - it is **contained in the stream's URL** (a plain, case-sensitive substring check), or
-   - it is **equal to the stream's hash** in Dispatcharr.
-3. A stream that no key fits has priority `0`.
-4. Streams are then sorted by `orderStreamsBy` (see [Stream order](#stream-order)). By default priority comes first, highest first: positive numbers go before unlisted feeds, negative numbers after them.
-5. A key that fits none of the member's streams does nothing, and the plan warns about it (`streamPriorities entry matched no stream`), so keys for feeds that have gone away are easy to spot.
+| Key | Gives points to |
+|---|---|
+| `m3u` | every stream from that M3U account (Dispatcharr's account name; case is ignored) |
+| `streams` | single feeds: the **first** key, in the order written, that is contained in the stream's URL or equal to its stream hash |
 
-The plan shows each stream's priority next to it.
+How a stream's priority is worked out:
 
-Which key to use: for AceStream feeds, the id after `id=` in the stream URL (`http://host/ace/getstream?id=<id>`) identifies the feed. Any other part of the URL works too, but keep it specific: a short key such as `123` can be contained in the URLs of feeds you did not mean. Always quote keys, because YAML reads an id made only of digits as a number.
+1. Only the streams the member's matchers already selected are considered. Points never add a stream to a channel or move one between channels.
+2. Each scope that applies (profile, then group, then member) adds its `m3u` points for the stream's account and its `streams` points for the first key that fits. Scopes never replace each other; to lower an account for one group or channel, give it negative points there (`provider-a: -60` on a member turns the profile's 50 into -10).
+3. A stream nothing gives points to has priority `0`. Positive totals go before it, negative ones after it.
+4. Streams are then sorted by `orderStreamsBy` (see [Stream order](#stream-order)); `priority` is this total.
 
-Keys are URLs, not names, on purpose: several feeds often share the same name, and priorities exist to tell them apart. Names decide which streams a channel gets (matchers); URLs decide the order of those streams. If a feed's URL changes, its key stops fitting and the feed goes back to priority `0`; nothing else breaks.
+The plan shows each stream's total and where it came from, for example `priority 250 (+50 m3u provider-a (profile), +200 stream c8ad9458…)`. It also warns about `streams` keys that fit no stream (so keys for feeds that have gone away are easy to spot) and about `m3u` names that match no M3U account.
+
+Pick a scale and stick to it, for example tens for accounts (10, 20, 30, …), 100 for an account that should always win, and 200 for a feed you know is reliable.
+
+Which `streams` key to use: for AceStream feeds, the id after `id=` in the stream URL (`http://host/ace/getstream?id=<id>`) identifies the feed. Any other part of the URL works too, but keep it specific: a short key such as `123` can be contained in the URLs of feeds you did not mean. Always quote keys, because YAML reads an id made only of digits as a number.
+
+Keys are URLs, not names, on purpose: several feeds often share the same name, and priorities exist to tell them apart. Names decide which streams a channel gets (matchers); URLs decide the order of those streams. If a feed's URL changes, its key stops fitting and the feed loses those points; nothing else breaks.
+
+`streamPriorities` on a member is the older spelling of the member's `priorities.streams` and still works; its points add up like any other. A key may not be in both.
 
 ### Preferring M3U accounts
 
-When you have the same channels from several M3U accounts, `m3uOrder` ranks the accounts, most preferred first:
+The simplest way to prefer an M3U account is to give it points with `priorities.m3u` (see [Stream priorities](#stream-priorities)). `m3uOrder` is the older way, still supported: a ranking of accounts, most preferred first, used as its own `orderStreamsBy` criterion (`m3u`) instead of adding points:
 
 ```yaml
 spec:
@@ -160,15 +186,15 @@ Names are Dispatcharr's M3U account names (case is ignored); accounts not listed
 
 | Criterion | Orders by |
 |---|---|
-| `priority` | `streamPriorities`, highest first |
+| `priority` | total `priorities` points (and `streamPriorities`), highest first |
 | `quality` | resolution, then bitrate, highest first (needs Dispatcharr stream stats) |
 | `m3u` | the stream's M3U account in `m3uOrder`, earliest first |
 
 ```yaml
-orderStreamsBy: [priority, quality, m3u]   # trusted feeds, then best picture, then preferred account
+orderStreamsBy: [priority, quality]   # most points first, then best picture
 ```
 
-Criteria you leave out are not used. Like `streamProfile`, it can be set on a profile and overridden on a group or member. For compatibility, the single value `orderStreamsBy: quality` means `[priority, m3u, quality]`, and leaving it out means `[priority, m3u]`. Remaining ties keep the order Dispatcharr returned the streams in.
+Criteria you leave out are not used. Like `streamProfile`, it can be set on a profile and overridden on a group or member. For compatibility, the single value `orderStreamsBy: quality` means `[priority, m3u, quality]`, and leaving it out means `[priority, m3u]`. Remaining ties keep the order Dispatcharr returned the streams in. `quality` uses the resolution and bitrate Dispatcharr measured when the stream was played, not what its name says; a stream that has never been played has no measurements and goes after measured ones.
 
 ### Keeping channels without streams
 

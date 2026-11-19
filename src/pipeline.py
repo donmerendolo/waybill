@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 from copy import copy
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from apps.channels.models import Stream
@@ -25,6 +25,7 @@ from .types.config import (
     ConfigEpgSchedule,
     ConfigGroup,
     ConfigMember,
+    ConfigPriorities,
     ConfigProfile,
     ConfigVariable,
     OrderStreamsBy,
@@ -104,6 +105,62 @@ class AccountNames:
         return [n for n in names if n.casefold() not in known]
 
 
+def _stream_key(keys: "Iterable[str]", stream: "Stream") -> "str | None":
+    """First key (in manifest order) that is part of the stream's URL or equals its hash.
+
+    Keys rank individual feeds, which can share a name, so names are deliberately
+    not used; a key whose feed has gone away simply stops matching.
+    """
+    stream_hash = getattr(stream, "stream_hash", None) or ""
+    url = getattr(stream, "url", None) or ""
+    for key in keys:
+        if key in url or key == stream_hash:
+            return key
+    return None
+
+
+def _short(key: str) -> str:
+    return key if len(key) <= 12 else key[:8] + "\u2026"
+
+
+@dataclass
+class PriorityScope:
+    """One scope's `priorities` (profile, group or member). Points from every
+    scope that applies to a stream add up. `matched` collects the stream keys
+    that fitted some stream, so keys that fit none can be reported."""
+
+    where: str  # "profile", "group" or "member", for the plan's breakdown
+    m3u: dict[str, int] = field(default_factory=dict)  # casefolded name -> points
+    streams: dict[str, int] = field(default_factory=dict)
+    matched: set[str] = field(default_factory=set)
+
+    @classmethod
+    def build(
+        cls,
+        where: str,
+        block: "ConfigPriorities | None",
+        legacy_streams: "dict[str, int] | None" = None,
+    ) -> "PriorityScope | None":
+        m3u = {k.casefold(): v for k, v in (block.m3u if block else {}).items()}
+        streams = {**(block.streams if block else {}), **(legacy_streams or {})}
+        if not m3u and not streams:
+            return None
+        return cls(where=where, m3u=m3u, streams=streams)
+
+    def points(
+        self, account: "str | None", stream: "Stream"
+    ) -> "list[tuple[int, str]]":
+        """(points, label) contributions of this scope to the stream."""
+        out: list[tuple[int, str]] = []
+        if account and account.casefold() in self.m3u:
+            out.append((self.m3u[account.casefold()], f"m3u {account}"))
+        key = _stream_key(self.streams, stream) if self.streams else None
+        if key is not None:
+            self.matched.add(key)
+            out.append((self.streams[key], f"stream {_short(key)}"))
+        return out
+
+
 class MemberPipeline:
     """Encapsulates matcher and transformer instances for a single ConfigMember."""
 
@@ -114,8 +171,15 @@ class MemberPipeline:
         inherited_order_streams_by: "OrderStreamsBy | list[OrderStreamsBy] | None" = None,
         inherited_variables: "dict[str, ConfigVariable] | None" = None,
         inherited_m3u_order: "list[str] | None" = None,
+        inherited_priorities: "list[PriorityScope] | None" = None,
     ) -> None:
         self._member = member
+        own = PriorityScope.build("member", member.priorities, member.stream_priorities)
+        self._own_priorities = own
+        self._priority_scopes: list[PriorityScope] = [
+            *(inherited_priorities or []),
+            *([own] if own is not None else []),
+        ]
         self._m3u_order: list[str] = (
             member.m3u_order if member.m3u_order is not None else inherited_m3u_order
         ) or []
@@ -147,10 +211,12 @@ class MemberPipeline:
             self._effective_order_streams_by
         ):
             self._required_fields.add("stream_stats")
-        if self._m3u_order:
+        self._needs_account = bool(self._m3u_order) or any(
+            scope.m3u for scope in self._priority_scopes
+        )
+        if self._needs_account:
             self._required_fields.add("m3u_account")
-        self._stream_priorities: dict[str, int] = member.stream_priorities
-        if self._stream_priorities:
+        if any(scope.streams for scope in self._priority_scopes):
             self._required_fields |= {"stream_hash", "url"}
         self._matcher_descs: list[str] = [m.describe() for m in self._matchers]
         self._transformer_descs: list[str] = [t.describe() for t in self._transformers]
@@ -288,7 +354,8 @@ class MemberPipeline:
         *all_streams* cache is used instead of re-reading the whole table.
         Each transformer step is recorded for verbose plan output.
         """
-        matched_priority_keys: set[str] = set()
+        if self._own_priorities is not None:
+            self._own_priorities.matched.clear()
         q_filter = build_q_filter(self._member.matchers)
         qs: "Iterable[Stream]"
         if all_streams is not None and not q_filter:
@@ -381,10 +448,9 @@ class MemberPipeline:
 
             if not was_dropped:
                 stream_stats = getattr(stream, "stream_stats", None)
-                m3u_account, m3u_rank = self._m3u_position(stream, accounts)
-                priority_key = self._priority_key(stream)
-                if priority_key is not None:
-                    matched_priority_keys.add(priority_key)
+                account_name = self._account_name(stream, accounts)
+                m3u_account, m3u_rank = self._m3u_position(account_name)
+                priority, priority_parts = self._priority(account_name, stream)
                 groups[working.name].append(
                     (
                         stream_stats,
@@ -396,11 +462,8 @@ class MemberPipeline:
                             # overrides of tvg_id and logo_url reach the channel.
                             tvg_id=working.tvg_id,
                             logo_url=working.logo_url,
-                            priority=(
-                                self._stream_priorities[priority_key]
-                                if priority_key is not None
-                                else 0
-                            ),
+                            priority=priority,
+                            priority_parts=priority_parts,
                             m3u_account=m3u_account,
                             m3u_rank=m3u_rank,
                             captures=declared_vars,
@@ -463,41 +526,48 @@ class MemberPipeline:
             member_plan,
             validator_descs=self._validator_descs,
             violations=all_violations,
-            unmatched_priorities=[
-                key
-                for key in self._stream_priorities
-                if key not in matched_priority_keys
-            ],
+            unmatched_priorities=(
+                [
+                    key
+                    for key in self._own_priorities.streams
+                    if key not in self._own_priorities.matched
+                ]
+                if self._own_priorities is not None
+                else []
+            ),
         )
 
-    def _m3u_position(
+    def _account_name(
         self, stream: "Stream", accounts: "AccountNames | None"
-    ) -> "tuple[str | None, int]":
+    ) -> "str | None":
+        """The stream's M3U account name, when an m3uOrder or m3u priority needs it."""
+        if not self._needs_account:
+            return None
+        account_id = getattr(stream, "m3u_account_id", None)
+        return (accounts or AccountNames()).name(account_id) if account_id else None
+
+    def _m3u_position(self, name: "str | None") -> "tuple[str | None, int]":
         """(account name, rank in m3uOrder) for this stream; (None, 0) without an order."""
         if not self._m3u_order:
             return None, 0
-        account_id = getattr(stream, "m3u_account_id", None)
-        name = (accounts or AccountNames()).name(account_id) if account_id else None
         unlisted = len(self._m3u_order)
         rank = self._m3u_rank.get(name.casefold(), unlisted) if name else unlisted
         return name or "?", rank
 
-    def _priority_key(self, stream: "Stream") -> "str | None":
-        """First streamPriorities key (in manifest order) matching this stream.
-
-        A key matches when it is part of the stream's URL (e.g. an AceStream id)
-        or equals its stream hash. Priorities rank individual feeds, which can
-        share a name, so names are deliberately not used; a key whose feed has
-        gone away simply stops matching and is reported in the plan.
-        """
-        if not self._stream_priorities:
-            return None
-        stream_hash = getattr(stream, "stream_hash", None) or ""
-        url = getattr(stream, "url", None) or ""
-        for key in self._stream_priorities:
-            if key in url or key == stream_hash:
-                return key
-        return None
+    def _priority(
+        self, account: "str | None", stream: "Stream"
+    ) -> "tuple[int, tuple[str, ...]]":
+        """Total priority (the sum over every scope) and where its points came from."""
+        parts: list[str] = []
+        total = 0
+        for scope in self._priority_scopes:
+            for points, label in scope.points(account, stream):
+                total += points
+                parts.append(
+                    f"{points:+d} {label}"
+                    + ("" if scope.where == "member" else f" ({scope.where})")
+                )
+        return total, tuple(parts)
 
 
 class GroupPipeline:
@@ -516,8 +586,13 @@ class GroupPipeline:
         group_variables: "dict[str, ConfigVariable] | None" = None,
         inherited_m3u_order: "list[str] | None" = None,
         group_m3u_order: "list[str] | None" = None,
+        inherited_priorities: "list[PriorityScope] | None" = None,
+        group_priorities: "ConfigPriorities | None" = None,
     ) -> None:
         self._key = key
+        own = PriorityScope.build("group", group_priorities)
+        self.priority_scope = own
+        scopes = [*(inherited_priorities or []), *([own] if own is not None else [])]
         self._name = name
         effective_sp = group_stream_profile or inherited_stream_profile
         effective_osb = group_order_streams_by or inherited_order_streams_by
@@ -537,6 +612,7 @@ class GroupPipeline:
                     if group_m3u_order is not None
                     else inherited_m3u_order
                 ),
+                inherited_priorities=scopes,
             )
             for m in members
         ]
@@ -566,6 +642,7 @@ class ProfilePipeline:
         self._key = key
         self._name = profile.name
         self._profile = profile
+        self.priority_scope = PriorityScope.build("profile", profile.priorities)
         self._pipelines = [
             GroupPipeline(
                 key=cat_key,
@@ -579,9 +656,30 @@ class ProfilePipeline:
                 group_variables=cat.variables,
                 inherited_m3u_order=profile.m3u_order,
                 group_m3u_order=cat.m3u_order,
+                inherited_priorities=(
+                    [self.priority_scope] if self.priority_scope is not None else []
+                ),
+                group_priorities=cat.priorities,
             )
             for cat_key, cat in profile.groups.items()
         ]
+
+    def unmatched_priorities(self) -> "list[str]":
+        """Profile and group priorities.streams keys that fitted no stream."""
+        out: list[str] = []
+        scopes = [("profile", self._key, self.priority_scope)] + [
+            ("group", g._key, g.priority_scope) for g in self._pipelines
+        ]
+        for where, key, scope in scopes:
+            if scope is None:
+                continue
+            for stream_key in scope.streams:
+                if stream_key not in scope.matched:
+                    out.append(
+                        f'{where} "{key}" priorities.streams entry matched no stream: '
+                        f'"{stream_key}"'
+                    )
+        return out
 
     def process(
         self,
@@ -590,6 +688,12 @@ class ProfilePipeline:
         accounts: "AccountNames | None" = None,
         guide: "EpgGuide | None" = None,
     ) -> ProfilePlan:
+        for scope in [
+            self.priority_scope,
+            *(g.priority_scope for g in self._pipelines),
+        ]:
+            if scope is not None:
+                scope.matched.clear()
         groups = [
             c.process(chunk_size=chunk_size, all_streams=all_streams, accounts=accounts)
             for c in self._pipelines
@@ -709,9 +813,11 @@ class WaybillPipeline:
             for p in self._profiles
         ]
         warnings = [
-            f'm3uOrder entry matches no M3U account: "{name}"'
+            f'm3uOrder / priorities.m3u entry matches no M3U account: "{name}"'
             for name in self._unknown_m3u_names(accounts)
         ]
+        for p in self._profiles:
+            warnings.extend(p.unmatched_priorities())
         return WaybillPlan(
             manifest_name=self._config.metadata.name,
             profiles=profiles,
@@ -722,13 +828,20 @@ class WaybillPipeline:
         """Every distinct m3uOrder name in the manifest that no M3U account has."""
         names: dict[str, str] = {}
         for profile in self._config.spec.profiles.values():
-            orders = [profile.m3u_order]
+            orders = [profile.m3u_order, _priority_m3u_names(profile.priorities)]
             for group in profile.groups.values():
                 orders.append(group.m3u_order)
-                orders.extend(member.m3u_order for member in group.members)
+                orders.append(_priority_m3u_names(group.priorities))
+                for member in group.members:
+                    orders.append(member.m3u_order)
+                    orders.append(_priority_m3u_names(member.priorities))
             for order in orders:
                 for name in order or []:
                     names.setdefault(name.casefold(), name)
         if not names:
             return []
         return accounts.unknown(list(names.values()))
+
+
+def _priority_m3u_names(block: "ConfigPriorities | None") -> "list[str]":
+    return list(block.m3u) if block is not None else []
