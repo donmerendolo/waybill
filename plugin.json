@@ -1,14 +1,36 @@
 {
   "name": "waybill",
   "display_name": "Waybill",
-  "version": "1.17.1",
+  "version": "1.18.0",
   "license": "GPL-3.0-only",
   "min_dispatcharr_version": "0.31.0",
   "description": "A Dispatcharr plugin for managing channel configurations using Waybill manifests",
   "author": "@Matthew-Beckett",
   "help_url": "https://github.com/donmerendolo/waybill",
   "fields": [
-    { "id": "manifest", "label": "Waybill Channel Manifest YAML", "type": "text", "default": "" },
+    {
+      "id": "manifest",
+      "label": "Waybill Channel Manifest YAML",
+      "type": "text",
+      "default": "",
+      "description": "Ignored when Manifest URL is set."
+    },
+    {
+      "id": "manifest_url",
+      "label": "Manifest URL",
+      "type": "string",
+      "default": "",
+      "placeholder": "https://raw.githubusercontent.com/<user>/<repo>/main/waybill.yaml",
+      "description": "Optional. Plan and Apply download the manifest from here on every run and ignore the YAML above; if the download fails, nothing is changed. GitHub file links are converted to their raw link. raw.githubusercontent.com can serve the previous version for about 5 minutes after a push; put a commit SHA instead of the branch name to pin a version."
+    },
+    {
+      "id": "manifest_url_token",
+      "label": "Manifest URL token",
+      "type": "string",
+      "input_type": "password",
+      "default": "",
+      "description": "Optional. Sent as \"Authorization: Bearer <token>\" to download from a private repository (e.g. a GitHub fine-grained token with read access to its contents)."
+    },
     {
       "id": "apply_mode",
       "label": "Apply Mode",

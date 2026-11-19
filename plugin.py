@@ -19,6 +19,7 @@ from .src.pipeline import WaybillPipeline
 from .src.plan import WaybillPlanFormatter
 from .src.apply import WaybillApplier
 from .src import scheduler
+from .src import manifest_source
 
 
 class WaybillError(Exception):
@@ -107,14 +108,23 @@ class Plugin(DispatcharrPlugin):
 
         return cast(WaybillLogger, logger)
 
-    def _load_configuration(self, context: Mapping[str, Any]) -> None:
+    def _load_configuration(
+        self, context: Mapping[str, Any], logger: "WaybillLogger | None" = None
+    ) -> None:
         config_data_raw = context.get("settings", {})
         if not isinstance(config_data_raw, dict):
             raise WaybillConfigurationError("Configuration settings must be a mapping")
         config_data = cast(dict[str, Any], config_data_raw)
 
-        manifest_value = config_data.get("manifest", "")
-        if not isinstance(manifest_value, str) or not manifest_value.strip():
+        try:
+            source = manifest_source.resolve(config_data)
+        except manifest_source.ManifestSourceError as e:
+            raise WaybillConfigurationError(f"{e} — nothing was changed") from e
+        if logger is not None:
+            logger.info(source.describe())
+
+        manifest_value = source.text
+        if not manifest_value.strip():
             raise WaybillConfigurationError(
                 "Configuration manifest is empty or missing"
             )
@@ -206,8 +216,8 @@ class Plugin(DispatcharrPlugin):
 
     def run(self, action: str, params: dict[str, Any], context: dict[str, Any]) -> None:
         self._ensure_schedule()
-        self._load_configuration(context)
         logger = self._require_logger(context)
+        self._load_configuration(context, logger)
 
         if action == "plan":
             self._run_plan(logger)
