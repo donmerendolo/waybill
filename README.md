@@ -6,7 +6,7 @@
 See [FORK-CHANGES.md](FORK-CHANGES.md) for what this fork changes from [upstream Waybill](https://github.com/Matthew-Beckett/waybill).
 
 > [!NOTE]
-> Built against Dispatcharr v0.33.0 and works on v0.31.0 and later. The apply path degrades gracefully on older releases that lack the newer hooks.
+> Built against Dispatcharr v0.34.1 and works on v0.31.0 and later. The apply path degrades gracefully on older releases that lack the newer hooks.
 
 A [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) plugin for managing channel configurations declaratively. You define a YAML manifest describing which streams to keep and how to name them. Waybill plans and applies those changes to Dispatcharr for you: **Plan** computes what would change (channels, numbers, streams in order, logos, EPG, which channels are disabled and why) and writes it to the log without touching anything; **Apply** computes the same and writes it to Dispatcharr.
 
@@ -742,10 +742,13 @@ The `examples/` directory contains annotated manifests covering every feature:
 
 | Waybill | Dispatcharr |
 |---|---|
-| 1.17.x | v0.33.0 (built and locked against), v0.31.0 and v0.32.0; older releases fall back gracefully where newer hooks are missing |
+| 1.19.1 and later | v0.34.1 (built and locked against), v0.31.0 – v0.34.0; older releases fall back gracefully where newer hooks are missing |
+| 1.17.x – 1.19.0 | v0.33.0 (built and locked against), v0.31.0 and v0.32.0; older releases fall back gracefully where newer hooks are missing |
 | 1.13.x – 1.16.x | v0.32.0 (built and locked against) and v0.31.0; older releases fall back gracefully where newer hooks are missing |
 | 1.6.x – 1.12.x | v0.31.0 (built and locked against); older releases fall back gracefully where newer hooks are missing |
 | 1.5.0 | v0.24.0 |
+
+On Dispatcharr 0.34+, Waybill's `plugin.json` declares the capabilities it uses (`manifest_version: 1`): **outbound network**, for [Manifest URL](#loading-the-manifest-from-a-url), and **background tasks**, for the auto-apply timer. Dispatcharr shows them when you enable or update the plugin and asks you to approve them once; version 1 does not restrict anything at runtime. Older Dispatcharr versions ignore both keys.
 
 The Dispatcharr version used for development is pinned in `[tool.uv.sources]` in `pyproject.toml`. Dispatcharr itself is provided by the host at runtime and is never vendored into the plugin ZIP.
 
